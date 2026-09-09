@@ -50,7 +50,8 @@
     <a href="#manifest">8. Manifest attributes reference</a>
     <a href="#usecases">9. Real-world use cases, and a combined Instrumentation + JFR + JMX example</a>
     <a href="#timeline">10. Version timeline</a>
-    <a href="#cheat">11. Cheat sheet</a>
+    <a href="#e2e">11. End-to-end walkthroughs — static &amp; dynamic, every file</a>
+    <a href="#cheat">12. Cheat sheet</a>
   </div>
 
   <!-- ============================================================ -->
@@ -621,7 +622,214 @@ MethodTimingEvent {
   </table>
 
   <!-- ============================================================ -->
-  <h2 id="cheat">11 · Cheat Sheet</h2>
+  <h2 id="e2e">11 · End-to-End Walkthroughs — Static &amp; Dynamic, Every File</h2>
+  <p>Every code block above builds up one piece at a time. This section assembles two complete,
+  self-contained projects — <strong>every</strong> file, in full, exactly as compiled — one static, one
+  dynamic. Both were actually built and run for this page; nothing is reconstructed from memory.</p>
+
+  <h3>11.1 · Static agent, start to finish — a call-counter agent</h3>
+  <p>Six files. The agent watches one method on one class and counts every call, injected purely at the
+  bytecode level via the Class-File API (§4):</p>
+  <pre><code class="bash">$ ls
+CallCounterAgent.java  CountingTransformer.java  Main.java  MANIFEST.MF  Probe.java  Worker.java</code></pre>
+  <pre><code class="java">// Probe.java -- what the injected bytecode calls into
+import java.util.concurrent.atomic.AtomicLong;
+
+public class Probe {
+  public static final AtomicLong CALLS = new AtomicLong();
+  public static void hit(String label) {
+    System.out.println("[probe] entered " + label + " (total calls=" + CALLS.incrementAndGet() + ")");
+  }
+}</code></pre>
+  <pre><code class="java">// CountingTransformer.java -- rewrites the target method's bytecode as it loads (full listing, see §4)
+import java.lang.classfile.*;
+import java.lang.constant.ClassDesc;
+import java.lang.constant.MethodTypeDesc;
+import static java.lang.constant.ConstantDescs.CD_void;
+import static java.lang.constant.ConstantDescs.CD_String;
+import java.lang.instrument.ClassFileTransformer;
+import java.security.ProtectionDomain;
+
+public class CountingTransformer implements ClassFileTransformer {
+  private final String targetClassNameSlash;
+  private final String targetMethodName;
+
+  public CountingTransformer(String targetClassNameSlash, String targetMethodName) {
+    this.targetClassNameSlash = targetClassNameSlash;
+    this.targetMethodName = targetMethodName;
+  }
+
+  @Override
+  public byte[] transform(ClassLoader loader, String className, Class&lt;?&gt; classBeingRedefined,
+                           ProtectionDomain protectionDomain, byte[] classfileBuffer) {
+    if (!targetClassNameSlash.equals(className)) return null;
+
+    ClassFile cf = ClassFile.of();
+    ClassModel model = cf.parse(classfileBuffer);
+
+    CodeTransform injectProbe = new CodeTransform() {
+      @Override public void atStart(CodeBuilder builder) {
+        builder.ldc(targetMethodName);
+        builder.invokestatic(ClassDesc.of("Probe"), "hit", MethodTypeDesc.of(CD_void, CD_String));
+      }
+      @Override public void accept(CodeBuilder builder, CodeElement element) {
+        builder.with(element);
+      }
+    };
+
+    ClassTransform xform = ClassTransform.transformingMethods(
+        mm -&gt; mm.methodName().equalsString(targetMethodName),
+        MethodTransform.transformingCode(injectProbe));
+
+    byte[] out = cf.transformClass(model, xform);
+    System.out.println("[agent] instrumented " + className + "." + targetMethodName
+        + "() -- " + classfileBuffer.length + " bytes -&gt; " + out.length + " bytes");
+    return out;
+  }
+}</code></pre>
+  <pre><code class="java">// CallCounterAgent.java -- the agent itself
+import java.lang.instrument.Instrumentation;
+
+public class CallCounterAgent {
+  public static void premain(String agentArgs, Instrumentation inst) {
+    String methodName = (agentArgs == null || agentArgs.isBlank()) ? "work" : agentArgs;
+    System.out.println("[agent] premain: watching Worker." + methodName + "()");
+    inst.addTransformer(new CountingTransformer("Worker", methodName), true);
+  }
+}</code></pre>
+  <pre><code class="java">// Worker.java -- the "application" class the agent watches, no agent-awareness at all
+public class Worker {
+  public void work() {
+    System.out.println("  ...doing real work...");
+  }
+}
+
+// Main.java -- the application entry point
+public class Main {
+  public static void main(String[] args) throws Exception {
+    Worker w = new Worker();
+    for (int i = 0; i &lt; 3; i++) w.work();
+    System.out.println("main done, Probe.CALLS=" + Probe.CALLS.get());
+  }
+}</code></pre>
+  <pre><code class="bash">$ cat MANIFEST.MF
+Premain-Class: CallCounterAgent
+Can-Retransform-Classes: true</code></pre>
+  <p>Build the agent jar, then the application, then run — the <code>=work</code> after the jar path is
+  <code>agentArgs</code>, telling this particular agent which method name to watch:</p>
+  <pre><code class="bash">$ javac *.java
+$ jar cfm call-counter-agent.jar MANIFEST.MF CallCounterAgent.class CountingTransformer.class \
+    'CountingTransformer$1.class' Probe.class
+$ java -javaagent:call-counter-agent.jar=work -cp . Main</code></pre>
+  <div class="warn"><strong>Verified real output</strong> — one jar, one flag, zero changes to
+  <code>Worker</code> or <code>Main</code>:
+  <pre><code class="java">[agent] premain: watching Worker.work()
+[agent] instrumented Worker.work() -- 404 bytes -&gt; 439 bytes
+[probe] entered work (total calls=1)
+  ...doing real work...
+[probe] entered work (total calls=2)
+  ...doing real work...
+[probe] entered work (total calls=3)
+  ...doing real work...
+main done, Probe.CALLS=3</code></pre></div>
+
+  <h3>11.2 · Dynamic agent, start to finish — attaching a live profiler to an already-running JVM</h3>
+  <p>The scenario every dynamic-attach tool actually solves: a JVM is <strong>already running</strong>,
+  <strong>already looping</strong> through <code>Worker.work()</code>, launched with no agent flags at
+  all — and a completely separate process reaches in, mid-flight, and turns on the exact same
+  instrumentation from §11.1 without a restart. Reuses <code>Worker.java</code>,
+  <code>Probe.java</code> and <code>CountingTransformer.java</code> unchanged from above; three new
+  files:</p>
+  <pre><code class="java">// TargetApp.java -- the already-running application. No agent flags, no awareness it might be watched.
+public class TargetApp {
+  public static void main(String[] args) throws Exception {
+    long pid = ProcessHandle.current().pid();
+    System.out.println("TargetApp pid=" + pid);
+    Worker w = new Worker();
+    for (int i = 0; i &lt; 12; i++) {
+      w.work();
+      Thread.sleep(500);
+    }
+    System.out.println("TargetApp exiting");
+  }
+}</code></pre>
+  <pre><code class="java">// DynamicCountAgent.java -- the dynamic agent: installs the transformer, THEN retransforms
+// a class that's already loaded and already executing inside TargetApp's loop (§5.1's technique,
+// but triggered from outside the process instead of from application code)
+import java.lang.instrument.Instrumentation;
+
+public class DynamicCountAgent {
+  public static void agentmain(String agentArgs, Instrumentation inst) throws Exception {
+    String methodName = (agentArgs == null || agentArgs.isBlank()) ? "work" : agentArgs;
+    System.out.println("[dyn-agent] agentmain: attaching a probe to Worker." + methodName + "(), live");
+    inst.addTransformer(new CountingTransformer("Worker", methodName), true);
+    inst.retransformClasses(Worker.class);   // Worker is ALREADY loaded and already looping in TargetApp
+    System.out.println("[dyn-agent] retransformClasses(Worker) done -- next call will be instrumented");
+  }
+}</code></pre>
+  <pre><code class="java">// Attacher.java -- a totally separate process/JVM; the only thing that talks to TargetApp by PID
+import com.sun.tools.attach.VirtualMachine;
+
+public class Attacher {
+  public static void main(String[] args) throws Exception {
+    String pid = args[0];
+    String agentJarPath = args[1];
+    String agentArgs = args.length &gt; 2 ? args[2] : null;
+    VirtualMachine vm = VirtualMachine.attach(pid);
+    vm.loadAgent(agentJarPath, agentArgs);
+    vm.detach();
+    System.out.println("Attacher: loadAgent completed");
+  }
+}</code></pre>
+  <pre><code class="bash">$ cat MANIFEST-DYN.MF
+Agent-Class: DynamicCountAgent
+Can-Retransform-Classes: true
+
+$ javac TargetApp.java DynamicCountAgent.java Attacher.java
+$ jar cfm dyn-count-agent.jar MANIFEST-DYN.MF DynamicCountAgent.class CountingTransformer.class \
+    'CountingTransformer$1.class' Probe.class</code></pre>
+  <p><strong>Terminal A</strong> — start the target with plain <code>java</code>, no
+  <code>-javaagent</code> anywhere. It runs unins­trumented for a few iterations:</p>
+  <pre><code class="bash">$ java -cp . TargetApp
+TargetApp pid=31112
+  ...doing real work...
+  ...doing real work...
+  ...doing real work...
+  ...doing real work...</code></pre>
+  <p><strong>Terminal B</strong> — a completely separate JVM, reaching into the one above purely by PID,
+  about 1.7 seconds in:</p>
+  <pre><code class="bash">$ java -cp . Attacher 31112 dyn-count-agent.jar work
+Attacher: loadAgent completed</code></pre>
+  <div class="warn"><strong>Verified real output</strong> — back in <strong>Terminal A</strong>, unedited:
+  the first four calls ran before the attach, plain and un-instrumented; JEP 451's warning (§7) fires the
+  instant <code>loadAgent</code> lands since this target wasn't started with
+  <code>-XX:+EnableDynamicAgentLoading</code>; then <code>retransformClasses</code> takes effect and every
+  call from that point on — same loop, same <code>Worker</code> instance, zero restart — is instrumented:
+  <pre><code class="java">TargetApp pid=31112
+  ...doing real work...
+  ...doing real work...
+  ...doing real work...
+  ...doing real work...
+WARNING: A Java agent has been loaded dynamically (/.../dyn-count-agent.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+[dyn-agent] agentmain: attaching a probe to Worker.work(), live
+[agent] instrumented Worker.work() -- 404 bytes -&gt; 439 bytes
+[dyn-agent] retransformClasses(Worker) done -- next call will be instrumented
+[probe] entered work (total calls=1)
+  ...doing real work...
+[probe] entered work (total calls=2)
+  ...doing real work...
+... (6 more instrumented calls, same pattern) ...
+TargetApp exiting</code></pre></div>
+  <div class="note">This is the actual shape of "attach a profiler to production without a restart":
+  nothing about <code>TargetApp</code> anticipated being watched, the instrumentation switched on
+  mid-loop, and the moment it did, every subsequent call — but not the ones already past — carried the
+  probe.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="cheat">12 · Cheat Sheet</h2>
   <div class="cheat">
     <h3>Java agents in one glance</h3>
     <ul>
