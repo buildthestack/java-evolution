@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>G1 GC — complete deep dive</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root="../" data-page="topics/g1-gc.html" data-title="G1 GC">
+<main>
+  <p class="sec-tag">Deep dive · JVM &amp; memory</p>
+  <h1>G1 GC — Garbage-First Garbage Collector <span class="badge added">Default since Java 9</span></h1>
+  <p class="lead">
+    G1 is the JVM's default garbage collector since Java 9, and for most server workloads it's the right
+    choice without any tuning at all. Its single defining idea — dividing the heap into small,
+    independently-collectable regions and always collecting the ones that are mostly garbage first — lets it
+    balance throughput and pause times far better than the full-heap stop-the-world collectors that came
+    before. This page covers everything from how a region works to exactly what happens inside a
+    concurrent marking cycle, with real log output captured on JDK 25.
+  </p>
+
+  <div class="hero-stats">
+    <div class="stat"><span class="num">Java 9</span><span class="lbl">default GC <span class="badge jep">JEP 248</span></span></div>
+    <div class="stat"><span class="num">1–32 MB</span><span class="lbl">heap region size, ergonomic</span></div>
+    <div class="stat"><span class="num">200 ms</span><span class="lbl">default pause-time goal</span></div>
+    <div class="stat"><span class="num">12</span><span class="lbl">parallel GC workers on this 15-CPU machine</span></div>
+    <div class="stat"><span class="num">SATB</span><span class="lbl">Snapshot-At-The-Beginning marking</span></div>
+  </div>
+
+  <div class="solves">
+    <span class="solves-label">The problem it solves</span>
+    Before G1, server JVMs defaulted to Parallel GC — a throughput-first design that stops every
+    application thread, marks the entire heap, and compacts the whole thing. Great for batch jobs; painful
+    for interactive services where a 500ms full-GC pause on a large heap is a real user-facing event.
+    G1's design, per JEP 248's own motivation: <em>"Limiting GC pause times is, in general, more
+    important than maximizing throughput. Switching to a low-pause collector such as G1 should provide a
+    better overall experience, for most users."</em>
+  </div>
+
+  <div class="page-toc">
+    <strong>On this page</strong>
+    <a href="#what">1. What G1 is, and why it's the default</a>
+    <a href="#timeline">2. Version timeline — every G1 JEP, verified</a>
+    <a href="#regions">3. The region-based heap</a>
+    <a href="#satb">4. SATB marking — the concurrent mark cycle explained</a>
+    <a href="#remsets">5. Remembered sets and card tables</a>
+    <a href="#ihop">6. IHOP and adaptive IHOP — when marking starts</a>
+    <a href="#humongous">7. Humongous objects — the allocation that bends the rules</a>
+    <a href="#gclog">8. Reading a real G1 log, phase by phase</a>
+    <a href="#evacfail">9. Evacuation failures and Full GC — the fallback paths</a>
+    <a href="#tuning">10. Tuning flags reference</a>
+    <a href="#whentouse">11. When to use G1 (and when not to)</a>
+    <a href="#comparison">12. G1 vs Parallel vs ZGC vs Shenandoah</a>
+    <a href="#cheat">13. Cheat sheet</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="what">1 · What G1 Is, and Why It's the Default</h2>
+  <p>G1 (Garbage-First) is, per Oracle's own GC Tuning Guide: <em>"targeted for multiprocessor machines
+  scaling to a large amount of memory. It attempts to meet garbage collection pause-time goals with high
+  probability while achieving high throughput with little need for configuration."</em></p>
+  <p>That last clause — "with little need for configuration" — is the practical reason it's the default.
+  The only flag most applications should ever touch is <code>-XX:MaxGCPauseMillis</code> (default 200ms),
+  and even that is optional. Oracle's own first sentence of tuning advice: <em>"The general recommendation
+  is to use G1 with its default settings, eventually giving it a different pause-time goal and setting a
+  maximum Java heap size by using <code>-Xmx</code> if desired."</em></p>
+  <p>The "Garbage-First" name is not marketing — it describes the actual algorithm for choosing what to
+  collect. Per the GC guide: <em>"Regions with little live data (lots of free space) are preferred over
+  regions that are mostly live... More efficient regions that take less time to collect and that contain
+  more free space are preferably collected in the subsequent Mixed collections."</em> In other words: G1
+  ranks all old-generation regions by how much garbage they contain, then collects the highest-ranked ones
+  first — exactly "garbage-first" priority ordering.</p>
+  <p>The full technical classification from Oracle's own docs: <em>"G1 is a generational, incremental,
+  parallel, mostly concurrent, stop-the-world, and evacuating garbage collector which monitors
+  pause-time goals in each of the stop-the-world pauses."</em> Every word matters:
+  <strong>generational</strong> (young/old split), <strong>evacuating</strong> (live objects are copied
+  out rather than swept in place — compaction is built in, not a separate pass),
+  <strong>mostly concurrent</strong> (marking runs alongside the application; only brief pauses bracket
+  it), and <strong>pause-time aware</strong> (G1 actually tracks its own performance against the goal
+  you've set and adjusts collection-set size accordingly).</p>
+
+  <!-- ============================================================ -->
+  <h2 id="timeline">2 · Version Timeline — Every G1 JEP, Verified</h2>
+  <table class="data">
+    <tr><th>JEP</th><th>Title</th><th>JDK</th><th>What changed</th></tr>
+    <tr><td>—</td><td>G1 available but not default</td><td>6u14+, 7</td>
+    <td>G1 first shipped as an experimental opt-in (<code>-XX:+UnlockExperimentalVMOptions
+    -XX:+UseG1GC</code>) in JDK 6u14, promoted to non-experimental but non-default in JDK 7. Concurrent
+    class unloading was missing, limiting real-world applicability.</td></tr>
+    <tr><td>—</td><td>Concurrent class unloading</td><td>8u40</td>
+    <td>The missing piece that made G1 viable for production: JDK 8u40 added concurrent class unloading,
+    which JEP 248 itself notes as what made G1 default-worthy by the time JDK 9 arrived.</td></tr>
+    <tr><td><strong>248</strong></td><td>Make G1 the Default Garbage Collector</td><td>9</td>
+    <td>Replaced Parallel GC as the server-config default. Motivation quoted directly from the JEP:
+    <em>"Limiting GC pause times is, in general, more important than maximizing throughput. Switching to
+    a low-pause collector such as G1 should provide a better overall experience, for most
+    users."</em></td></tr>
+    <tr><td><strong>307</strong></td><td>Parallel Full GC for G1</td><td>10</td>
+    <td>Before JDK 10, G1's fallback Full GC was <strong>single-threaded</strong> — a stark contrast to
+    its normally-parallel design. JEP 307 parallelized it: now Full GC uses the same thread count as
+    Young and Mixed collections, controlled by <code>-XX:ParallelGCThreads</code>. Still a worst-case,
+    stop-the-world event, but much shorter on multi-core machines.</td></tr>
+    <tr><td><strong>344</strong></td><td>Abortable Mixed Collections for G1</td><td>12</td>
+    <td>G1's heuristics sometimes picked too much work for a mixed collection, causing pauses to exceed
+    the user-defined goal. JEP 344 lets G1 detect repeated mispredictions and switch to incremental
+    collection of "optional" old regions, aborting after each step if the pause target is already
+    met.</td></tr>
+    <tr><td><strong>346</strong></td><td>Promptly Return Unused Committed Memory from G1</td><td>12</td>
+    <td>G1 previously held onto all committed heap memory forever, making it look like a memory hog in
+    containers. JEP 346 added periodic GC triggers during idle periods so G1 can uncommit unused pages.
+    Real-world testing cited in the JEP showed reductions of <em>"up to 85%"</em> in committed
+    memory for bursty workloads.</td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="regions">3 · The Region-Based Heap</h2>
+  <p>Everything distinctive about G1 follows from one structural decision: the heap is not one contiguous
+  block assigned to one generation. Per Oracle's GC guide: <em>"G1 partitions the heap into a set of
+  equally sized heap regions, each a contiguous range of virtual memory. A region is the unit of memory
+  allocation and memory reclamation."</em></p>
+
+  <h3>3.1 · Region types</h3>
+  <p>At any moment each region is in one of these roles — and regions change roles dynamically as
+  the application runs and collections complete:</p>
+  <table class="data">
+    <tr><th>Type</th><th>Log label</th><th>Role</th></tr>
+    <tr><td><strong>Eden</strong></td><td><code>Eden regions:</code></td>
+    <td>New objects are allocated here (from TLABs). Collected at every Young GC.</td></tr>
+    <tr><td><strong>Survivor</strong></td><td><code>Survivor regions: (S)</code></td>
+    <td>Objects that survived one Young GC but haven't aged out to old yet. Also collected every
+    Young GC.</td></tr>
+    <tr><td><strong>Old</strong></td><td><code>Old regions:</code></td>
+    <td>Long-lived objects promoted from Survivor. Collected selectively in Mixed GCs, never in
+    pure Young GCs.</td></tr>
+    <tr><td><strong>Humongous</strong></td><td><code>Humongous regions: (H)</code></td>
+    <td>Objects ≥ half a region in size — allocated directly in contiguous old-region sequences,
+    never in Eden. Details in §7.</td></tr>
+    <tr><td><strong>Free</strong></td><td>(no label)</td>
+    <td>Unassigned; G1 hands these out when a region needs to change role.</td></tr>
+  </table>
+  <div class="warn"><strong>Verified real output — region accounting from a single GC cycle on a 6g
+  heap:</strong>
+  <pre><code class="java">GC(0) Eden regions:     12-&gt;0(65)   // 12 eden collected, 0 remain, budget for next cycle: 65
+GC(0) Survivor regions:  0-&gt;2(2)   // 2 survivors promoted in
+GC(0) Old regions:       1-&gt;11     // live objects promoted to old
+GC(0) Humongous regions: 0-&gt;0      // no humongous this cycle</code></pre>
+  The numbers in parentheses are the next cycle's <em>target</em> region count — G1's sizing heuristics
+  set this after each pause based on recent allocation rates.</div>
+
+  <h3>3.2 · Region sizes — ergonomic, not fixed</h3>
+  <p>Region size is chosen so there are roughly <strong>2048 regions</strong> at the target heap size.
+  Valid sizes are 1–32 MB and must be a power of 2. Verified directly on this JDK 25 install at four
+  different heap sizes:</p>
+  <table class="data">
+    <tr><th><code>-Xmx</code></th><th>Ergonomic region size</th></tr>
+    <tr><td>256 MB</td><td>1 MB</td></tr>
+    <tr><td>1 GB</td><td>1 MB</td></tr>
+    <tr><td>4 GB</td><td>2 MB</td></tr>
+    <tr><td>6 GB</td><td>4 MB</td></tr>
+    <tr><td>32 GB</td><td>16 MB</td></tr>
+  </table>
+  <p>Override with <code>-XX:G1HeapRegionSize=8m</code> if your application allocates many large objects
+  that are below the humongous threshold — a larger region raises that threshold and avoids the humongous
+  allocation path for those objects (§7).</p>
+  <div class="warn"><strong>Verified init log on this JDK 25 install (<code>-Xmx6g</code>):</strong>
+  <pre><code class="java">[gc,init] Heap Region Size: 4M
+[gc,init] Heap Min Capacity: 8M
+[gc,init] Heap Initial Capacity: 768M
+[gc,init] Heap Max Capacity: 6G
+[gc,init] Parallel Workers: 12
+[gc,init] Concurrent Workers: 3
+[gc,init] Concurrent Refinement Workers: 12
+[gc,init] Periodic GC: Disabled
+[gc,init] CardTable entry size: 512</code></pre></div>
+
+  <h3>3.3 · The collection set — what G1 chooses to collect each pause</h3>
+  <p>At the start of each GC pause, G1 builds a <strong>collection set</strong> — the specific regions it
+  will evacuate during that pause. From Oracle's GC guide verbatim:</p>
+  <ul>
+    <li><strong>In a Young-Only collection:</strong> the collection set consists only of Eden and Survivor
+    regions (and any humongous regions that are obviously reclaimable).</li>
+    <li><strong>In a Mixed collection:</strong> the collection set consists of all young-generation regions
+    <em>plus</em> some old-generation regions selected by the garbage-first priority ordering — the ones
+    with the most garbage and the fewest cross-region references, so each one delivers the most
+    reclamation for the least work.</li>
+  </ul>
+  <p>G1 tracks <strong>collection set candidate regions</strong> — old-generation regions identified
+  during the Remark pause as likely profitable to collect. From these it filters out any region where the
+  reclaimable space is less than <code>-XX:G1HeapWastePercent</code> percent of the current heap, since
+  the evacuation work wouldn't be worth it.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="satb">4 · SATB Marking — the Concurrent Mark Cycle Explained</h2>
+  <p>G1 uses a marking algorithm called <strong>SATB</strong> (Snapshot-At-The-Beginning). Oracle's own
+  definition: <em>"It takes a virtual snapshot of the heap at the time of the Initial Mark pause, when
+  all objects that were live at the start of marking are considered live for the remainder of marking."</em>
+  The key consequence: any object that was reachable when marking started is treated as live for this
+  cycle — even if it becomes dead during the concurrent-mark phase. This keeps the marking invariant
+  simple and fast, at the small cost of occasionally retaining some floating garbage for one extra
+  cycle.</p>
+
+  <h3>4.1 · The full concurrent mark cycle, phase by phase</h3>
+  <p>A single concurrent mark cycle — what shows up in the log as <code>Concurrent Mark Cycle</code> — is
+  triggered when old-generation occupancy reaches the IHOP threshold (§6), initiated during a routine
+  Young GC, and completes its heavy work entirely concurrently. Only three sub-phases require
+  stop-the-world work:</p>
+  <table class="data">
+    <tr><th>Phase</th><th>STW?</th><th>What happens</th></tr>
+    <tr><td><strong>Pause Young (Concurrent Start)</strong></td><td>Yes — Young GC pause</td>
+    <td>A normal young-generation evacuation, tagged as "Concurrent Start" because it also piggybacks the
+    start of marking. The SATB snapshot is taken at the beginning of this pause — every reference visible
+    right now is the "before" picture that marking will walk.</td></tr>
+    <tr><td><strong>Concurrent Mark</strong></td><td>No</td>
+    <td>G1's concurrent worker threads (3 on this 15-CPU machine) walk the object graph from the SATB
+    roots, marking every reachable object. The application runs normally alongside. Any reference writes
+    during this phase are tracked by SATB write barriers so no live objects are missed.</td></tr>
+    <tr><td><strong>Concurrent Mark From Roots</strong></td><td>No</td>
+    <td>Sub-phase of concurrent mark — walks specifically from GC roots (thread stacks, JNI handles,
+    etc.).</td></tr>
+    <tr><td><strong>Pause Remark</strong></td><td>Yes — very brief</td>
+    <td>Finalizes marking: drains any remaining SATB buffers (references written during concurrent mark
+    that weren't processed yet), processes weak references, and identifies which old regions have enough
+    garbage to become collection-set candidates. Verified at sub-millisecond on this JDK 25 install.</td></tr>
+    <tr><td><strong>Concurrent Rebuild Remembered Sets and Scrub Regions</strong></td><td>No</td>
+    <td>Rebuilds remembered sets for collection-set candidate regions and scrubs regions that are
+    completely empty after marking. Runs concurrently.</td></tr>
+    <tr><td><strong>Pause Cleanup</strong></td><td>Yes — sub-millisecond</td>
+    <td>A brief accounting pause: updates internal structures, decides whether there are enough candidate
+    regions to enter the Space-Reclamation phase (Mixed collections). Verified at under 0.015ms on this
+    install.</td></tr>
+  </table>
+  <div class="warn"><strong>Verified real log — one full concurrent mark cycle (GC(4)) from a 6GB-heap
+  run, captured on JDK 25:</strong>
+  <pre><code class="java">[0.076s] GC(3) Pause Young (Concurrent Start) (G1 Evacuation Pause) 549M-&gt;550M(772M) 3.970ms
+[0.080s] GC(4) Concurrent Mark Cycle
+[0.081s] GC(4) Concurrent Mark
+[0.081s] GC(4) Concurrent Mark From Roots
+[0.086s] GC(4) Concurrent Mark From Roots  5.051ms     ← concurrent, app running
+[0.086s] GC(4) Pause Remark                701M-&gt;701M(2308M) 0.297ms  ← STW, very brief
+[0.086s] GC(4) Concurrent Rebuild Remembered Sets and Scrub Regions
+[0.087s] GC(4) Concurrent Rebuild Remembered Sets and Scrub Regions  0.422ms  ← concurrent
+[0.087s] GC(4) Pause Cleanup               709M-&gt;709M(2308M) 0.009ms  ← STW, sub-millisecond
+[0.089s] GC(4) Concurrent Mark Cycle       8.969ms total</code></pre>
+  A full marking cycle over a 700MB live set, with only <strong>0.306ms of total STW time</strong>
+  (Remark 0.297ms + Cleanup 0.009ms) — everything else ran concurrently alongside the
+  application.</div>
+
+  <h3>4.2 · From marking to Mixed collections</h3>
+  <p>After Cleanup, G1 knows which old-generation regions are worth collecting. It then runs
+  <strong>Mixed</strong> collections — Young GCs that also evacuate some of those ranked old regions.
+  The log shows the transition clearly:</p>
+  <pre><code class="java">Pause Young (Concurrent Start)(Evac.)   ← kicks off concurrent mark
+Pause Young (Normal)(Evac.)             ← pure young, no old involved
+Pause Young (Prepare Mixed)(Evac.)      ← last young-only; builds the mixed-GC schedule
+Pause Young (Mixed)(Evac.)             ← young + selected old regions evacuated together
+Pause Young (Mixed)(Evac.)             ← more mixed, until old gen is sufficiently clean
+Pause Young (Concurrent Start)(Evac.)  ← old gen has grown again; next mark cycle starts</code></pre>
+  <div class="warn"><strong>Verified subtypes and counts from a 6GB-heap run:</strong>
+  <pre><code class="java">Normal:          14 cycles  (pure young evacuation)
+Concurrent Start: 10 cycles  (young + starts a new marking cycle)
+Prepare Mixed:    8 cycles  (last young-only before switching to mixed)
+Mixed:            8 cycles  (young + old regions evacuated together)</code></pre></div>
+
+  <!-- ============================================================ -->
+  <h2 id="remsets">5 · Remembered Sets and Card Tables</h2>
+  <p>G1 must be able to collect just the young generation without scanning the entire old generation —
+  otherwise every minor GC would cost as much as a full GC. The mechanism that makes this possible is the
+  <strong>remembered set</strong>.</p>
+  <p>Per Oracle's GC guide: <em>"To evacuate the collection set G1 manages a remembered set: the set of
+  locations outside the collection set that contain references into the collection set. When an object
+  from the collection set moves during garbage collection, any other references to that object from
+  outside the collection set need to be changed to point to the new location."</em></p>
+
+  <h3>5.1 · Card tables — memory-efficient compression</h3>
+  <p>Tracking individual references would be expensive in both time and space. G1 uses
+  <strong>cards</strong> — per Oracle: <em>"G1 logically partitions the heap into cards, by default 512
+  byte sized areas. Remembered set entries are compressed indexes of these cards."</em> Verified on this
+  JDK 25 install: <code>CardTable entry size: 512</code> appears in the <code>gc+init</code> log for every
+  G1 run. This means a remembered set entry for a reference from old to young doesn't pinpoint the exact
+  object — it names a 512-byte card, and during GC G1 rescans that card to find the actual
+  reference.</p>
+  <p>This is a deliberate space/accuracy trade-off: a card table covering a 6GB heap needs only
+  6GB / 512 = 12MB — trivial compared to tracking every individual reference.</p>
+
+  <h3>5.2 · Concurrent refinement — keeping card tables current</h3>
+  <p>As the application writes references during normal execution, those writes dirty cards. G1's
+  <strong>concurrent refinement threads</strong> (12 on this machine — verified from init log) run
+  continuously in the background to process dirty cards and update the remembered sets before the next
+  GC needs them. This work doesn't stop the application — it competes gently for CPU in the
+  background.</p>
+  <p>During a GC pause itself, any remaining dirty cards that refinement threads didn't finish are
+  processed synchronously — that work shows up in the <code>GC Refinement Stats</code> block and is
+  budgeted by <code>-XX:G1RSetUpdatingPauseTimePercent</code> (default 10% of the pause budget).</p>
+
+  <!-- ============================================================ -->
+  <h2 id="ihop">6 · IHOP and Adaptive IHOP — When Marking Starts</h2>
+  <p>G1 needs to start its concurrent marking cycle <em>early enough</em> that marking finishes before the
+  old generation fills up — if marking finishes too late, G1 runs out of heap space before it can reclaim
+  any old-generation memory, forcing a stop-the-world Full GC. The <strong>Initiating Heap Occupancy
+  Percent</strong> (IHOP) is the threshold that controls this timing.</p>
+  <p>Oracle's definition: <em>"The Initiating Heap Occupancy Percent (IHOP) is the threshold at which a
+  Concurrent Start collection is triggered and it is defined as a percentage of the old generation
+  size."</em></p>
+
+  <h3>6.1 · Adaptive IHOP — the default</h3>
+  <p>Rather than asking users to guess the right threshold, G1 computes it automatically.
+  Per Oracle: <em>"G1 by default automatically determines an optimal IHOP by observing how long marking
+  takes and how much memory is typically allocated in the old generation during marking cycles. This
+  feature is called Adaptive IHOP."</em></p>
+  <p>The goal: trigger marking early enough so that the first Mixed collection starts when the old
+  generation is at <code>max old gen size</code> minus <code>G1ReservePercent</code> as a buffer. Verified
+  from the <code>gc+ihop=trace</code> log on this JDK 25 install — Adaptive IHOP begins updating its
+  model immediately, tracking allocation rates and marking duration to refine its predictions:</p>
+  <div class="warn"><strong>Verified real IHOP log — first two updates from a 6GB-heap run:</strong>
+  <pre><code class="java">GC(0) Basic information: threshold=362387865B (45.00%), target occupancy=805306368B,
+  current occupancy=50315304B, recent allocation rate=3442370346B/s, marking length=0.00ms
+GC(0) Adaptive IHOP: threshold=362387865B (47.37%), internal target=765041049B,
+  additional buffer=281018368B, predicted old-gen alloc rate=6884740693B/s,
+  prediction active: false         ← not yet enough history; using static 45% as seed</code></pre>
+  Two thresholds appear: the <em>basic</em> threshold (static, 45% of max old gen — the
+  <code>InitiatingHeapOccupancyPercent</code> default used until there's enough history) and the
+  <em>adaptive</em> threshold, which updates each cycle as more allocation data comes in. Once
+  <code>prediction active: true</code>, the adaptive value takes over.</div>
+
+  <h3>6.2 · When to override</h3>
+  <table class="data">
+    <tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+    <tr><td>Frequent Full GCs despite concurrent marking completing</td><td>Heap fills faster than
+    marking can keep up</td><td>Increase <code>-XX:ConcGCThreads</code> (concurrent mark threads), or
+    lower the IHOP manually via <code>-XX:InitiatingHeapOccupancyPercent</code> + disable adaptive IHOP
+    with <code>-XX:-G1UseAdaptiveIHOP</code></td></tr>
+    <tr><td>Concurrent mark cycles starting too early, wasting CPU</td><td>Adaptive IHOP is
+    over-conservative with a spiky allocation pattern</td><td>Increase
+    <code>-XX:G1ReservePercent</code> (gives marking more buffer) or tune
+    <code>InitiatingHeapOccupancyPercent</code></td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="humongous">7 · Humongous Objects — the Allocation That Bends the Rules</h2>
+  <p>G1's design assumes objects fit neatly inside a single region. One class of objects breaks that
+  assumption: per Oracle, <em>"Humongous objects are objects larger or equal the size of half a
+  region."</em> At a 4MB region size (the ergonomic choice for a 6GB heap), any object ≥ 2MB is
+  humongous.</p>
+  <p>Verified directly: at <code>-Xmx256m</code> (1MB regions), a 700KB allocation correctly triggers
+  the humongous path — 700KB &gt; 512KB (half of 1MB).</p>
+  <table class="data">
+    <tr><th>Property</th><th>Detail</th></tr>
+    <tr><td>Where allocated</td><td>Directly in contiguous old-generation regions — never in Eden.
+    Per Oracle: <em>"Every humongous object gets allocated as a sequence of contiguous regions in the old
+    generation. The start of the object itself is always located at the start of the first region in that
+    sequence."</em></td></tr>
+    <tr><td>Wasted space</td><td><em>"Any leftover space in the last region of the sequence will be
+    lost for allocation until the entire object is reclaimed."</em> A 2.1MB object in 4MB regions
+    uses 2 regions (8MB allocated) with 5.9MB permanently wasted while the object is alive.</td></tr>
+    <tr><td>When reclaimed</td><td>Generally only at the end of marking (Cleanup pause) — unlike
+    young objects that are collected every cycle. Exception: primitive-array humongous objects
+    (<code>bool[]</code>, <code>int[]</code>, etc.) can be eagerly reclaimed during any GC pause if they
+    have few references to them — <code>-XX:+G1EagerReclaimHumongousObjects</code>, on by
+    default.</td></tr>
+    <tr><td>Premature GC trigger</td><td>Per Oracle: <em>"Allocations of humongous objects may cause
+    garbage collection pauses to occur prematurely. G1 checks the IHOP threshold at every humongous
+    object allocation and may force an initial mark young collection immediately."</em></td></tr>
+    <tr><td>Never moved (almost)</td><td>Humongous objects don't participate in normal evacuation.
+    They move only during a last-resort Full GC scenario (a second Full GC in the same pause needed to
+    find contiguous space) — described by Oracle as <em>"very slow."</em></td></tr>
+  </table>
+  <div class="tip">If your heap dump shows many large primitive arrays and GC logs show frequent
+  humongous allocations, increasing <code>-XX:G1HeapRegionSize</code> (e.g. from 4MB to 8MB or 16MB)
+  raises the humongous threshold and allows those arrays to go through the normal Eden path
+  instead.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="gclog">8 · Reading a Real G1 Log, Phase by Phase</h2>
+  <p>One flag gives everything: <code>-Xlog:gc*</code>. For production, one line per collection
+  is sufficient; the verbose form shows every sub-phase with its cost broken out.</p>
+  <pre><code class="bash">$ java -XX:+UseG1GC -Xmx6g -Xlog:gc -cp . G1Demo     # concise
+$ java -XX:+UseG1GC -Xmx6g -Xlog:gc* -cp . G1Demo     # every sub-phase</code></pre>
+  <div class="warn"><strong>Verified real output — full verbose log for GC(0) and GC(4) on JDK 25 with a
+  3GB live set, 6GB heap:</strong>
+  <pre><code class="java">// --- GC(0): first Young evacuation ---
+[0.022s] GC(0) Pause Young (Normal) (G1 Evacuation Pause)
+[0.023s] GC(0) Using 12 workers of 12 for evacuation
+[0.028s] GC(0)   Pre Evacuate Collection Set:    0.11ms
+[0.028s] GC(0)   Merge Heap Roots:               0.08ms
+[0.028s] GC(0)   Evacuate Collection Set:        4.38ms  ← the real work: copy live Eden objects
+[0.028s] GC(0)   Post Evacuate Collection Set:   0.21ms
+[0.028s] GC(0)   Other:                          0.87ms
+[0.028s] GC(0) Eden regions:     12-&gt;0(65)
+[0.028s] GC(0) Survivor regions:  0-&gt;2(2)
+[0.028s] GC(0) Old regions:       1-&gt;11
+[0.028s] GC(0) Pause Young (Normal) (G1 Evacuation Pause) 48M-&gt;47M(772M)  5.804ms
+
+// --- GC(4): Concurrent Mark Cycle interleaved with GC(3) ---
+[0.076s] GC(3) Pause Young (Concurrent Start) (G1 Evacuation Pause) 549M-&gt;550M(772M) 3.970ms
+[0.080s] GC(4) Concurrent Mark Cycle                  ← starts; runs alongside app
+[0.081s] GC(4) Concurrent Mark From Roots             5.051ms  ← concurrent
+[0.086s] GC(4) Pause Remark                           0.297ms  ← STW
+[0.087s] GC(4) Concurrent Rebuild Remembered Sets and Scrub Regions  0.422ms  ← concurrent
+[0.087s] GC(4) Pause Cleanup                          0.009ms  ← STW
+[0.089s] GC(4) Concurrent Mark Cycle                  8.969ms total
+
+// --- GC(6): first Prepare Mixed after marking ---
+[0.119s] GC(6) Pause Young (Prepare Mixed) (G1 Evacuation Pause) 1272M-&gt;1272M(2308M) 41.744ms
+// --- GC(7): Mixed — young + old regions evacuated together ---
+[0.162s] GC(7) Pause Young (Mixed) (G1 Evacuation Pause) 1600M-&gt;1600M(2308M) 27.086ms</code></pre></div>
+  <h3>Decoding the one-line summary format</h3>
+  <pre><code class="java">GC(6) Pause Young (Prepare Mixed) (G1 Evacuation Pause) 1272M-&gt;1272M(2308M) 41.744ms
+//    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^
+//    pause subtype                reason               heap before-&gt;after(size)  duration</code></pre>
+  <p>Common pause subtypes and what triggers them:</p>
+  <table class="data">
+    <tr><th>Subtype</th><th>Trigger</th></tr>
+    <tr><td><code>Normal</code></td><td>Routine young GC — Eden is full, no marking needed yet</td></tr>
+    <tr><td><code>Concurrent Start</code></td><td>Young GC that also kicks off a concurrent mark cycle
+    because old-gen occupancy crossed the IHOP threshold</td></tr>
+    <tr><td><code>Prepare Mixed</code></td><td>Young GC after a completed mark cycle — the last
+    young-only pause before switching to Mixed collections; builds the mixed-GC schedule</td></tr>
+    <tr><td><code>Mixed</code></td><td>Evacuates young regions <em>and</em> a ranked selection of
+    old regions (the "Garbage-First" part in action)</td></tr>
+    <tr><td>Reason: <code>G1 Evacuation Pause</code></td><td>Normal cause — Eden or Survivor filled</td></tr>
+    <tr><td>Reason: <code>G1 Preventive</code></td><td>Preemptive GC to avoid an imminent allocation
+    failure</td></tr>
+    <tr><td>Reason: <code>G1 Compaction Pause</code></td><td>Full GC triggered — see §9</td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="evacfail">9 · Evacuation Failures and Full GC — the Fallback Paths</h2>
+  <p>G1 normally copies live objects from the collection set into free regions. Two failure modes can
+  interrupt this and fall back to more expensive operations:</p>
+
+  <h3>9.1 · Evacuation failure (to-space exhausted)</h3>
+  <p>If G1 runs out of free regions to copy objects into <em>during</em> a Young or Mixed GC — because
+  the live set was larger than the free space available — it declares an <strong>evacuation
+  failure</strong>. Objects that can't be moved are left in place with a forwarding pointer to themselves.
+  G1 then must do extra cleanup work inside the same pause (fixup of remembered sets, in-place
+  compaction of some regions) before it can safely exit. Visible in the log as:</p>
+  <pre><code class="java">GC(N) Evacuation Failure: ... (To-space Exhausted)</code></pre>
+  <p>This is a warning sign, not a crash — but it degrades to slower in-place collection and can cascade
+  into a Full GC. Root cause is almost always either a live set that's too large for the configured heap,
+  or a large humongous object arriving at the wrong moment.</p>
+
+  <h3>9.2 · Full GC — the last resort</h3>
+  <p>If G1 can't reclaim enough memory even after an evacuation failure, or if concurrent marking
+  completes but there are still no regions worth collecting in a Space-Reclamation phase, G1 falls back
+  to a <strong>Full GC</strong> — a single-threaded (pre-JDK 10) or parallel (JDK 10+, via JEP 307)
+  stop-the-world mark-sweep-compact over the entire heap. This is the "last resort" that G1's whole
+  design exists to avoid.</p>
+  <div class="warn">Since JDK 10 (JEP 307), Full GC uses the same <code>-XX:ParallelGCThreads</code>
+  thread count as normal Young/Mixed collections — 12 on this machine. Before JDK 10 it was
+  single-threaded, so a Full GC on a 32GB heap could pause for many seconds.</div>
+  <p>Visible in the log as:</p>
+  <pre><code class="java">GC(N) Pause Full (G1 Compaction Pause) heap-before-&gt;heap-after(heap-size) time</code></pre>
+  <p><strong>To avoid Full GC:</strong> size the heap generously enough for the live set plus allocation
+  headroom during marking (<code>-Xmx</code>), let Adaptive IHOP start marking early enough, and don't
+  create humongous-object avalanches from many short-lived large arrays — use object pooling or increase
+  region size if those show up frequently.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="tuning">10 · Tuning Flags Reference</h2>
+  <p>Sourced from Oracle's GC Tuning Guide for JDK 21/25, cross-checked against
+  <code>-XX:+PrintFlagsFinal</code> on this JDK 25 install. Oracle's top-level advice: <em>"The general
+  recommendation is to use G1 with its default settings."</em> These flags are for the cases where
+  defaults aren't enough:</p>
+  <table class="data">
+    <tr><th>Flag</th><th>Default</th><th>What it does</th></tr>
+    <tr><td><code>-XX:MaxGCPauseMillis</code></td><td><code>200</code></td><td>The <strong>primary
+    tuning lever</strong> — G1's pause-time goal. Lowering it makes G1 collect smaller batches more
+    frequently; raising it allows larger batches with fewer collections. It's a goal, not a hard cap: G1
+    can exceed it, especially during Mixed collections on a nearly-full heap.</td></tr>
+    <tr><td><code>-Xmx</code></td><td>platform ergonomic</td><td>Maximum heap size. The most impactful
+    setting for avoiding Full GC: the heap must be large enough to hold the live set plus headroom for
+    allocation while a concurrent mark cycle runs.</td></tr>
+    <tr><td><code>-XX:SoftMaxHeapSize</code></td><td>= <code>-Xmx</code></td><td>Soft ceiling G1 tries
+    to stay under; heap can still grow to <code>-Xmx</code> under real pressure. Useful in containers
+    where you want to leave headroom for native/off-heap allocations.</td></tr>
+    <tr><td><code>-XX:G1HeapRegionSize</code></td><td>ergonomic (1–32 MB)</td><td>Override the region
+    size. The main reason to set this manually: if your application allocates many objects just above the
+    humongous threshold, doubling the region size moves those objects back into the normal Eden path
+    where they're cheaper to collect.</td></tr>
+    <tr><td><code>-XX:G1NewSizePercent</code> / <code>-XX:G1MaxNewSizePercent</code></td><td>ergonomic</td>
+    <td>Min/max percentage of the heap reserved for the young generation. Rarely needed — G1 sizes this
+    adaptively. Setting <code>G1MaxNewSizePercent</code> can cap memory pressure from very high
+    allocation rates.</td></tr>
+    <tr><td><code>-XX:G1ReservePercent</code></td><td><code>10</code></td><td>How much free space G1
+    keeps in reserve as a buffer (verified from <code>PrintFlagsFinal</code>). Increase this if you
+    frequently see evacuation failures — more reserve means G1 triggers marking earlier (via IHOP
+    calculation) and has more runway for to-space.</td></tr>
+    <tr><td><code>-XX:InitiatingHeapOccupancyPercent</code></td><td><code>45</code></td><td>The static
+    IHOP seed value — used as the initial threshold until Adaptive IHOP has collected enough data
+    (verified: appears as "45.00%" in the IHOP trace log). Only acts as the live threshold if
+    <code>-XX:-G1UseAdaptiveIHOP</code> is also set.</td></tr>
+    <tr><td><code>-XX:G1UseAdaptiveIHOP</code></td><td><code>true</code></td><td>Adaptive IHOP (on by
+    default, verified). Set to <code>false</code> (<code>-XX:-G1UseAdaptiveIHOP</code>) if you want
+    predictable, manually-controlled marking start times rather than adaptive behavior.</td></tr>
+    <tr><td><code>-XX:ConcGCThreads</code></td><td>ergonomic (3 on this 15-CPU machine)</td><td>How many
+    threads run concurrent marking. Increase if marking consistently fails to finish before the heap
+    fills (causing Full GC), at the cost of more CPU competition with the application.</td></tr>
+    <tr><td><code>-XX:G1ConcRefinementThreads</code></td><td>ergonomic (12 on this machine)</td><td>Max
+    threads used to update remembered sets concurrently between GC pauses.</td></tr>
+    <tr><td><code>-XX:G1HeapWastePercent</code></td><td><code>5</code></td><td>Stop the Space-Reclamation
+    phase when the remaining reclaimable memory (across all candidate regions) drops below this percentage
+    of the heap — to avoid spending a full Mixed GC pause for diminishing returns.</td></tr>
+    <tr><td><code>-XX:G1MixedGCLiveThresholdPercent</code></td><td>ergonomic</td><td>Exclude old regions
+    from the Mixed GC collection set if their liveness exceeds this percentage — too-live regions cost
+    more to evacuate than they free.</td></tr>
+    <tr><td><code>-XX:G1PeriodicGCInterval</code></td><td><code>0</code> (off)</td><td>Trigger a
+    periodic GC after this many ms of inactivity — useful for returning unused heap to the OS (JEP 346)
+    in long-idle services. Requires <code>-XX:+ExplicitGCInvokesConcurrent</code> to be a
+    concurrent cycle rather than a Full GC.</td></tr>
+    <tr><td><code>-XX:G1EagerReclaimHumongousObjects</code></td><td><code>true</code></td><td>Eagerly
+    reclaim primitive-array humongous objects at any GC pause if they have few inbound references. On
+    by default — disable only if the overhead of the reference check outweighs the reclamation
+    benefit (very rare).</td></tr>
+    <tr><td><code>-XX:ParallelGCThreads</code></td><td>ergonomic (12 on this machine)</td><td>Threads
+    used during stop-the-world evacuation and (since JDK 10) Full GC.</td></tr>
+  </table>
+  <div class="warn"><strong>Flags to avoid with G1 — Oracle says so explicitly:</strong>
+  <code>-Xmn</code>, <code>-XX:NewRatio</code>, and <code>-XX:NewSize</code>/<code>-XX:MaxNewSize</code>.
+  Oracle's GC guide, verbatim: <em>"Avoid limiting the young generation size to particular values...
+  because the young generation size is the main means for G1 to allow it to meet the pause-time. Setting
+  the young generation size to a single value overrides and practically disables pause-time
+  control."</em></div>
+
+  <!-- ============================================================ -->
+  <h2 id="whentouse">11 · When to Use G1 (and When Not To)</h2>
+  <table class="data">
+    <tr><th>Scenario</th><th>G1?</th><th>Why</th></tr>
+    <tr><td>General-purpose web services, APIs, microservices</td><td>Yes — it's the default for a
+    reason</td><td>Good balance of throughput and latency, works well from 256MB to hundreds of GB with
+    little tuning. You get concurrent marking and compaction for free.</td></tr>
+    <tr><td>Large heaps (tens of GB — in-memory caches, analytics)</td><td>Yes</td><td>The region-based
+    design means G1 collects a fraction of the heap per pause, not the whole thing. Pauses grow somewhat
+    with live-set size but remain far below a Parallel full-heap compaction.</td></tr>
+    <tr><td>Hardest latency requirements (sub-ms P99, trading, real-time)</td><td>No — reach for ZGC or
+    Shenandoah</td><td>G1 pauses grow with live-set size at large heaps. Verified: 65.461ms worst pause
+    on a 6GB / 3GB-live-set workload. If that's unacceptable, ZGC's verified 0.009ms worst pause on the
+    same workload is the alternative (see the <a href="zgc.html">ZGC deep dive</a>).</td></tr>
+    <tr><td>Pure-throughput batch / ETL / overnight jobs</td><td>Maybe not — try Parallel GC</td>
+    <td>Concurrent marking and refinement threads burn CPU competing with the application. Parallel GC's
+    full-STW design trades those pauses for doing everything with maximum parallelism, producing higher
+    raw throughput per CPU-hour when nobody cares about individual pause duration.</td></tr>
+    <tr><td>Small containers, CLI tools, serverless cold-starts</td><td>No — Serial or
+    Parallel</td><td>G1's concurrent infrastructure (refinement threads, remembered-set maintenance)
+    has overhead that isn't worth paying for a 100MB heap that lives for 3 seconds.</td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="comparison">12 · G1 vs Parallel vs ZGC vs Shenandoah</h2>
+  <table class="data">
+    <tr><th></th><th>Parallel</th><th>G1 (default)</th><th>ZGC</th><th>Shenandoah <em>(Red Hat, general knowledge)</em></th></tr>
+    <tr><td>Pause model</td><td>Full STW — heap size scales pauses</td><td>Mostly concurrent — live-set
+    size scales pauses somewhat</td><td>Fully concurrent — O(roots), not O(heap)</td><td>Fully
+    concurrent — similar to ZGC</td></tr>
+    <tr><td>Best latency<br>(verified, same workload, 6GB heap, 3GB live)</td>
+    <td>—</td>
+    <td><strong>65.461ms worst pause</strong></td>
+    <td><strong>0.009ms worst pause</strong></td>
+    <td>—</td></tr>
+    <tr><td>Compaction</td><td>Full heap, every full GC</td><td>Incremental — collects one region batch
+    per Mixed GC</td><td>Fully concurrent relocation — no compaction pause</td><td>Fully concurrent
+    compaction</td></tr>
+    <tr><td>Core mechanism</td><td>Mark-copy (young) + mark-compact (full)</td><td>Region evacuation +
+    SATB concurrent marking</td><td>Colored pointers + load/store barriers</td><td>Brooks forwarding
+    pointers + load-reference barriers</td></tr>
+    <tr><td>Generational</td><td>Yes (young/old)</td><td>Yes (young/old, the original design)</td>
+    <td>Yes, since JDK 21 — only mode since JDK 24</td><td>Yes, final in JDK 25</td></tr>
+    <tr><td>Best fit</td><td>Throughput-first batch jobs</td><td>Most server workloads — the
+    default</td><td>Large heaps + hardest latency requirements</td><td>Same niche as ZGC, different
+    vendor</td></tr>
+    <tr><td>Enable with</td><td><code>-XX:+UseParallelGC</code></td><td><code>-XX:+UseG1GC</code> (or
+    omit — it's the default)</td><td><code>-XX:+UseZGC</code></td><td><code>-XX:+UseShenandoahGC</code></td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="cheat">13 · Cheat Sheet</h2>
+  <div class="cheat">
+    <h3>G1 GC in one glance</h3>
+    <ul>
+      <li><strong>Default since Java 9</strong> (JEP 248) — replaced Parallel GC for the reason the
+      JEP states directly: "Limiting GC pause times is more important than maximizing
+      throughput."</li>
+      <li><strong>"Garbage-First" means priority ordering:</strong> G1 ranks old-generation regions by
+      garbage density and always picks the most-garbage ones for Mixed collections — not a random
+      sample of the old gen.</li>
+      <li><strong>Region-based heap:</strong> 1–32 MB regions (ergonomic, verified to be 4 MB at -Xmx6g
+      on this machine); Eden, Survivor, Old, Humongous, and Free roles assigned dynamically. Objects ≥
+      half a region size go through the Humongous path in Old directly — with wasted space and limited
+      reclamation options (§7).</li>
+      <li><strong>SATB concurrent marking:</strong> a virtual live-set snapshot at the start of marking
+      lets G1 trace reachability concurrently — Remark and Cleanup are the only STW pauses in a mark
+      cycle. Verified: 0.297ms Remark + 0.009ms Cleanup on a 700MB live set (§4).</li>
+      <li><strong>Adaptive IHOP</strong> starts marking early enough that Mixed collections begin before
+      the heap fills — verified adapting in real time from IHOP trace logs (§6).</li>
+      <li><strong>Worst-case benchmark:</strong> 65.461ms on a 6GB heap / 3GB live set — contrasted with
+      ZGC's 0.009ms on the same workload (§12 / <a href="zgc.html">ZGC deep dive</a>).</li>
+      <li><strong>Enable:</strong> it's already the default. To be explicit:
+      <code>-XX:+UseG1GC</code>.</li>
+      <li><strong>One flag to tune first:</strong> <code>-XX:MaxGCPauseMillis</code> (default 200ms).
+      Everything else G1 handles adaptively.</li>
+      <li><strong>Never set:</strong> <code>-Xmn</code>, <code>-XX:NewRatio</code> — Oracle explicitly
+      warns these disable G1's pause-time control by pinning the young-gen size (§10).</li>
+      <li><strong>Watch it:</strong> <code>-Xlog:gc</code> for one line per collection;
+      <code>-Xlog:gc*</code> for full sub-phase breakdown including region accounting, worker counts, and
+      CPU time (§8).</li>
+      <li><strong>See also:</strong> the <a href="jvm-memory-gc.html">JVM Memory Model &amp; GC</a>
+      overview and the <a href="zgc.html">ZGC deep dive</a> for how G1 compares to the alternative
+      low-latency collectors.</li>
+    </ul>
+  </div>
+
+</main>
+<script src="../assets/nav.js"></script>
+<script src="../assets/highlight.js"></script>
+</body>
+</html>

@@ -377,7 +377,9 @@ java -Xmx64m -Xlog:gc+age=trace YourApp.java
   <p><em>Default since Java 9.</em> Verified from Oracle's own docs: "generational, incremental,
   parallel, mostly concurrent, stop-the-world, and evacuating." Splits the heap into equal-sized
   regions (not one contiguous young/old block) and prioritizes collecting the regions with the most
-  garbage first — hence the name. Full deep dive → <a href="#g1deep">§7</a>.</p>
+  garbage first — hence the name. Full deep dive → <a href="#g1deep">§7</a> on this page, or the
+  dedicated <a href="g1-gc.html">G1 GC deep dive</a> (SATB marking, IHOP, Mixed collections, tuning
+  flags, and a head-to-head pause benchmark vs ZGC).</p>
 
   <h3>ZGC (Z Garbage Collector) — <code>-XX:+UseZGC</code></h3>
   <p>A scalable, low-latency concurrent collector. Verified from Oracle's docs: pause times independent
