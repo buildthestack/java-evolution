@@ -158,9 +158,9 @@
     <select id="version-select">
       <option value="">— pick a version —</option>
       <option value="25">Java 25 · LTS  (20 questions)</option>
-      <option value="21">Java 21 · LTS  (coming soon)</option>
-      <option value="17">Java 17 · LTS  (coming soon)</option>
-      <option value="26">Java 26  (coming soon)</option>
+      <option value="21">Java 21 · LTS  (25 questions)</option>
+      <option value="17">Java 17 · LTS  (25 questions)</option>
+      <option value="26">Java 26  (20 questions)</option>
     </select>
     <div class="quiz-score">
       Score: <span class="score-pill" id="score-pill">—</span>
@@ -423,6 +423,859 @@ const QUESTIONS = {
       ],
       a: 1,
       exp: "JEP 483 ('Ahead-of-Time Class Loading and Linking') caches the result of loading and linking classes — the expensive startup work of reading .class files, resolving references, and running <clinit>. On subsequent runs, the JVM replays the cached state instead of redoing it. This is different from AOT compilation (native code generation) — the bytecode still runs on the JIT, just with the class-loading overhead removed. It's also distinct from JIT profile-guided optimization (PGO) or GC root pre-computation."
+    }
+  ]
+
+,
+
+  21: [
+    {
+      tag: "Concurrency · JEP 444",
+      q: "Which of the following correctly creates a new virtual thread and starts it immediately in Java 21?",
+      opts: [
+        "new VirtualThread(() -> task()).start()",
+        "Thread.ofVirtual().start(task)",
+        "Executors.newVirtualThread(task)",
+        "Thread.startVirtual(task)"
+      ],
+      a: 1,
+      exp: "Thread.ofVirtual().start(runnable) is the canonical one-liner to create and start a virtual thread in Java 21 (JEP 444). Thread.ofVirtual() returns a Thread.Builder.OfVirtual; calling .start(r) both builds and starts the thread. The name() and unstarted() variants exist too. VirtualThread is not a public class — it's internal. Executors.newVirtualThreadPerTaskExecutor() creates an Executor that spawns a virtual thread per task, but Executors.newVirtualThread() doesn't exist. Thread.startVirtual() never existed."
+    },
+    {
+      tag: "Concurrency · Virtual Threads",
+      q: "What is 'pinning' in the context of virtual threads, and what is its primary cause?",
+      opts: [
+        "A virtual thread that cannot be garbage-collected because it holds a strong reference",
+        "A virtual thread blocked on a synchronized block or native frame, holding its carrier thread hostage",
+        "A virtual thread that is permanently bound to a specific carrier thread at creation time",
+        "A virtual thread stuck in a tight CPU loop that cannot be preempted"
+      ],
+      a: 1,
+      exp: "Pinning means a virtual thread cannot be unmounted from its carrier thread while blocked. The two causes are: (1) the virtual thread is executing code inside a synchronized block or method — the JVM cannot safely unmount because the monitor's ownership is tied to the OS thread, and (2) the virtual thread is executing a native method or foreign function. When pinned, the carrier thread is blocked too, reducing parallelism. The fix is to replace synchronized with ReentrantLock for I/O-heavy critical sections. Java 24 (JEP 491) started work to fix synchronized pinning."
+    },
+    {
+      tag: "Collections · JEP 431",
+      q: "SequencedCollection was added in Java 21 (JEP 431). What does its reversed() method return?",
+      opts: [
+        "A new copied List with elements in reverse order",
+        "A reverse-order view of the same underlying collection",
+        "An Iterator that traverses in reverse",
+        "A Stream in reverse order"
+      ],
+      a: 1,
+      exp: "SequencedCollection.reversed() returns a reverse-order VIEW of the original collection — not a copy. Changes to the original are reflected in the reversed view and vice versa. This is the same contract as List.subList() — a view, not a snapshot. For example, LinkedList.reversed() returns a view that allows bidirectional iteration from the tail. If you want a copy, you'd wrap it: new ArrayList<>(list.reversed())."
+    },
+    {
+      tag: "Language · JEP 441",
+      q: "In Java 21, pattern matching for switch (JEP 441) allows null as a case label. What happens with this code if obj is null?\n\nswitch (obj) {\n  case null  -> System.out.println(\"null\");\n  case String s -> System.out.println(s);\n}",
+      opts: [
+        "NullPointerException is thrown before the switch evaluates",
+        "The null case matches and prints \"null\"",
+        "Compilation error — null is not valid in a switch case label",
+        "The default case runs (if present), or NullPointerException is thrown"
+      ],
+      a: 1,
+      exp: "In Java 21, switch with pattern matching explicitly allows 'case null' as a label (JEP 441). When obj is null, the null case matches and prints \"null\" — no NPE is thrown. This is a deliberate change: before Java 21 pattern-matching switch, a null selector always threw NPE. The null case must appear before any total type patterns that would otherwise match everything. Without an explicit null case in a pattern switch, null still throws NPE — so you opt in to null handling explicitly."
+    },
+    {
+      tag: "Language · JEP 440",
+      q: "Record Patterns (JEP 440, final in Java 21) allow what that plain type patterns do not?",
+      opts: [
+        "Matching against interface types",
+        "Using a when guard clause",
+        "Destructuring the record's components directly in the pattern",
+        "Matching against primitive types"
+      ],
+      a: 2,
+      exp: "Record patterns let you destructure a record's components inline in the pattern. For example: if (obj instanceof Point(int x, int y)) { ... } binds x and y directly. A plain type pattern (instanceof Point p) only binds the whole object to p — you then have to call p.x() and p.y() separately. Both type patterns and record patterns support when guards. Matching interfaces and primitive types are separate topics (type patterns match interfaces; primitives in patterns are a later preview)."
+    },
+    {
+      tag: "Language · JEP 440",
+      q: "Nested record patterns are valid in Java 21. Which of the following correctly matches a ColoredPoint(Point(int x, int y), Color c)?",
+      opts: [
+        "case ColoredPoint(Point p, Color c) -> ...",
+        "case ColoredPoint(Point(int x, int y), Color c) -> ...",
+        "case ColoredPoint cp when cp.point() instanceof Point(int x, int y) -> ...",
+        "Both A and B are valid for the same result"
+      ],
+      a: 3,
+      exp: "Both A and B are valid: A uses a type pattern for the inner Point (binding the whole Point to p), while B uses a nested record pattern to destructure Point's components directly into x and y. They are both syntactically and semantically valid in Java 21. Option C (using when with instanceof) works too but is the verbose pre-Java-21 style that patterns replace. Java 21 supports arbitrarily deep nesting of record patterns."
+    },
+    {
+      tag: "Language · JEP 441",
+      q: "For pattern matching switch with a sealed class hierarchy, when is the switch considered exhaustive without a default case?",
+      opts: [
+        "Never — a default case is always required for sealed types",
+        "When every permitted subtype of the sealed class has a corresponding case label",
+        "When the switch covers all non-abstract subtypes",
+        "Only when the sealed class has exactly two subtypes"
+      ],
+      a: 1,
+      exp: "A switch on a sealed type is exhaustive (no default required) when every permitted subtype has a matching case label — either a type pattern case or a specific record/class case that covers it. The compiler enforces this. If you add a new permitted subtype to the sealed class later, the switch becomes non-exhaustive and the code fails to compile — this is the intentional design: sealed types make exhaustiveness checkable at compile time. Abstract subtypes still count — if they are sealed themselves, their subtypes must also be covered."
+    },
+    {
+      tag: "Language · JEP 441",
+      q: "What does a 'when' guard clause do in a Java 21 pattern switch case?",
+      opts: [
+        "It replaces the case label entirely, like a conditional case expression",
+        "It adds a boolean condition that must be true AFTER the pattern matches for that branch to execute",
+        "It is evaluated BEFORE the pattern is matched and short-circuits pattern evaluation",
+        "It allows null-safe pattern matching"
+      ],
+      a: 1,
+      exp: "A 'when' guard (case String s when s.length() > 5 -> ...) first checks the pattern match (is it a String?), then evaluates the boolean guard. If the guard is false, the match falls through to the next case — it does not throw, it simply continues pattern evaluation. The guard is checked AFTER the pattern, never before. This is similar to Haskell/Scala guards. Multiple cases can have the same type with different guards: case Integer i when i < 0 -> ... case Integer i -> ..."
+    },
+    {
+      tag: "Concurrency · JEP 453",
+      q: "Structured Concurrency (JEP 453) in Java 21 — which statement is correct?",
+      opts: [
+        "It is final and available without --enable-preview",
+        "It is in its first preview and requires --enable-preview",
+        "It replaces CompletableFuture in the standard library",
+        "StructuredTaskScope is in the java.util.concurrent package as a stable API"
+      ],
+      a: 1,
+      exp: "Structured Concurrency was in its first preview in Java 21 (JEP 453), requiring --enable-preview. It was not final — it went through multiple preview rounds (JEP 462 in Java 22, JEP 480 in Java 23, JEP 499 in Java 24, JEP 505 in Java 25) before the API stabilized. StructuredTaskScope exists in java.util.concurrent but as a preview class. It does not replace CompletableFuture — they solve different problems (StructuredTaskScope structures fork/join patterns for concurrent subtasks with lifecycle guarantees)."
+    },
+    {
+      tag: "Concurrency · Virtual Threads",
+      q: "Virtual threads in Java 21 are scheduled by default on which executor/thread pool?",
+      opts: [
+        "A dedicated single-threaded executor per virtual thread group",
+        "The common ForkJoinPool, with FIFO scheduling mode",
+        "A cached thread pool (Executors.newCachedThreadPool())",
+        "The calling platform thread directly"
+      ],
+      a: 1,
+      exp: "Virtual threads are scheduled by the JVM onto a ForkJoinPool configured in FIFO mode (unlike the default work-stealing pool which is LIFO). The parallelism of this pool defaults to Runtime.getRuntime().availableProcessors() — one carrier thread per CPU. You can override the carrier pool via the system property jdk.virtualThreadScheduler.parallelism. You cannot share this pool with application code: it is a dedicated internal pool. This is why blocking operations in virtual threads don't starve other virtual threads — the pool can create more carrier threads up to its limit."
+    },
+    {
+      tag: "Concurrency · Virtual Threads",
+      q: "Which of these operations on a virtual thread does NOT cause pinning in Java 21?",
+      opts: [
+        "Blocking inside a synchronized method",
+        "Calling a native (JNI) method that blocks",
+        "Calling Thread.sleep(Duration) inside a virtual thread",
+        "Blocking inside a synchronized block on an object monitor"
+      ],
+      a: 2,
+      exp: "Thread.sleep() inside a virtual thread does NOT pin the carrier thread — it correctly yields the virtual thread, which gets unmounted from its carrier, allowing the carrier to run other virtual threads. This is one of the key wins of virtual threads: blocking operations in java.util.concurrent and Thread.sleep() have all been updated to be virtual-thread-friendly (they unmount rather than block the OS thread). In contrast, synchronized blocks/methods and native frames do cause pinning in Java 21, holding the carrier hostage."
+    },
+    {
+      tag: "Collections · JEP 431",
+      q: "Which existing Java collection classes gained SequencedCollection in Java 21? Select the CORRECT group.",
+      opts: [
+        "ArrayList, LinkedList, TreeSet, LinkedHashSet",
+        "HashMap, LinkedHashMap, TreeMap, PriorityQueue",
+        "HashSet, LinkedHashSet, ArrayDeque, PriorityQueue",
+        "ArrayList only — other classes require explicit casting"
+      ],
+      a: 0,
+      exp: "ArrayList, LinkedList, TreeSet, and LinkedHashSet all implement SequencedCollection. The full picture: List implementations (ArrayList, LinkedList, Vector, Stack) implement SequencedCollection; LinkedHashSet and TreeSet implement SequencedSet (a sub-interface). LinkedHashMap and TreeMap implement SequencedMap. HashSet, HashMap, and PriorityQueue do NOT — they have no defined encounter order. ArrayDeque also implements SequencedCollection because it has defined first/last semantics."
+    },
+    {
+      tag: "Concurrency · Virtual Threads",
+      q: "What does Thread.currentThread().isVirtual() return when called from inside a virtual thread in Java 21?",
+      opts: [
+        "UnsupportedOperationException — isVirtual() was added in Java 22",
+        "true",
+        "false — all threads report false; use VirtualThread.current() instead",
+        "Depends on whether the virtual thread is currently mounted on a carrier"
+      ],
+      a: 1,
+      exp: "Thread.currentThread().isVirtual() returns true when called from a virtual thread. The isVirtual() method was added to java.lang.Thread in Java 21 as part of JEP 444. It always reflects the thread's nature (virtual vs platform), not its current mount state. There is no VirtualThread.current() public API — Thread.currentThread() is the correct way to get the current thread, and isVirtual() distinguishes the type."
+    },
+    {
+      tag: "Cryptography · JEP 452",
+      q: "The Key Encapsulation Mechanism API (JEP 452, final in Java 21) standardizes what cryptographic operation?",
+      opts: [
+        "Encrypting symmetric keys with public-key cryptography (like RSA-OAEP or ECDH-based key wrapping)",
+        "Deriving shared secrets from Diffie-Hellman key exchanges",
+        "Generating HMAC-based one-time passwords",
+        "Signing certificates in a Public Key Infrastructure"
+      ],
+      a: 0,
+      exp: "KEM (Key Encapsulation Mechanism) is a public-key primitive that lets a sender use a recipient's public key to encapsulate a randomly generated symmetric key — the recipient uses their private key to decapsulate and recover the same symmetric key, which is then used for bulk encryption. This is the foundation of post-quantum hybrid encryption schemes (ML-KEM/Kyber, etc.). JEP 452 provides KEM.getInstance(\"DHKEM(X25519, HKDF-SHA256)\") and related classes. It is distinct from KeyAgreement (like ECDH, which is interactive) — KEM is non-interactive."
+    },
+    {
+      tag: "GC · ZGC · JEP 439",
+      q: "In Java 21, how do you opt into Generational ZGC (JEP 439)?",
+      opts: [
+        "-XX:+UseZGC (generational is now the default in Java 21)",
+        "-XX:+UseZGC -XX:+ZGenerational",
+        "-XX:+UseGenerationalZGC",
+        "-XX:+UseZGC -XX:+G1UseAdaptiveGenerations"
+      ],
+      a: 1,
+      exp: "-XX:+UseZGC -XX:+ZGenerational is the correct opt-in for Generational ZGC in Java 21. Generational ZGC was introduced as an opt-in feature (JEP 439); it did not become the default until Java 23 (JEP 474). In Java 21, plain -XX:+UseZGC gives you the original single-generation ZGC. -XX:+UseGenerationalZGC and G1UseAdaptiveGenerations don't exist. The -XX:+ZGenerational flag was later deprecated in Java 23 and removed in Java 24."
+    },
+    {
+      tag: "Concurrency · JEP 446",
+      q: "Scoped Values (JEP 446, preview in Java 21) solve which specific ThreadLocal problem?",
+      opts: [
+        "ThreadLocal values are not inherited by child threads",
+        "ThreadLocal.remove() must be called manually; forgetting it leaks values into pooled threads",
+        "ThreadLocal is not thread-safe for concurrent access",
+        "ThreadLocal values cannot be read from a different class"
+      ],
+      a: 1,
+      exp: "The core ThreadLocal problem Scoped Values fix is the mandatory cleanup burden: ThreadLocal values live for the thread's lifetime unless explicitly removed. In a thread pool, a task that sets a ThreadLocal and forgets to remove it leaves stale data for the next task run on the same pooled thread — a memory and correctness leak. ScopedValue bindings are automatically cleaned up when the scope exits, regardless of whether it exits normally or via exception. They also address inheritance: ScopedValues are automatically inherited by child threads created within the scope, whereas ThreadLocal requires InheritableThreadLocal for inheritance (with its own caveats)."
+    },
+    {
+      tag: "Language · JEP 443",
+      q: "Unnamed Patterns and Variables (JEP 443, preview in Java 21) — which is a valid use of _ in a preview-enabled Java 21 program?",
+      opts: [
+        "int _ = 42; System.out.println(_);",
+        "try { } catch (IOException _) { }",
+        "var _ = computeExpensive(); // use result elsewhere",
+        "for (var _ : list) { sideEffect(); }  AND  catch (Exception _) { } are both valid"
+      ],
+      a: 3,
+      exp: "With JEP 443 (preview in Java 21, final in Java 22), _ is valid in: catch blocks (catch (Exception _)), enhanced for loops (for (var _ : list)), try-with-resources (try (var _ = res())), lambda parameters ((_, b) -> b), and pattern bindings. Critically, _ cannot be READ — once you name something _, you can never reference it. So int _ = 42; System.out.println(_) fails (reading a discard). Option D is correct because both catch and for-each uses are valid unnamed-variable contexts."
+    },
+    {
+      tag: "Concurrency · Virtual Threads",
+      q: "What does the Java documentation warn about using ThreadLocal with virtual threads?",
+      opts: [
+        "ThreadLocal does not work with virtual threads — it always returns null",
+        "ThreadLocal values are shared between all virtual threads, causing race conditions",
+        "With millions of virtual threads, ThreadLocal values that are never removed can cause significant memory pressure since each thread carries its own copy",
+        "ThreadLocal is thread-safe for virtual threads but not for platform threads"
+      ],
+      a: 2,
+      exp: "ThreadLocal works correctly with virtual threads — each virtual thread gets its own independent copy, just like platform threads. The documented concern is scale: if you create a million virtual threads (the whole point of virtual threads), and each one inherits or creates ThreadLocal values that are never cleaned up, you have a million copies of those values in memory simultaneously. This is a quantitative problem: ThreadLocal overhead that was tolerable with hundreds of pooled platform threads becomes significant with millions of virtual threads. The recommendation is to prefer ScopedValue, or ensure ThreadLocal.remove() is called before the virtual thread terminates."
+    },
+    {
+      tag: "Language · JEP 441",
+      q: "What happens at RUNTIME if a switch expression on a sealed interface doesn't cover all subtypes but has no default, and a new subtype is added (compiled separately)?",
+      opts: [
+        "The switch silently falls through with no output",
+        "A MatchException is thrown at runtime",
+        "An IllegalArgumentException is thrown",
+        "The code fails to compile because sealed type coverage is always checked at compile time"
+      ],
+      a: 1,
+      exp: "A MatchException is thrown at runtime. This can happen in a separate-compilation scenario: the switch was exhaustive at compile time (covering all known permitted subtypes), but a new subtype was added and the switch class wasn't recompiled. At runtime, no case matches and the JVM throws MatchException (a new exception in java.lang, added in Java 21 alongside pattern matching for switch). Option D is wrong because separate compilation means the switch compiler and the new subtype compiler are independent. Always recompile everything together to catch this at compile time."
+    },
+    {
+      tag: "JVM · JEP 451",
+      q: "JEP 451 ('Prepare to Disallow the Dynamic Loading of Agents') introduced in Java 21 does what?",
+      opts: [
+        "Makes -javaagent forbidden at JVM launch",
+        "Prints a warning when a Java agent is loaded dynamically into an already-running JVM (via the Attach API), but still allows it",
+        "Removes the Attach API entirely from jdk.attach module",
+        "Requires agents to be signed with a code-signing certificate"
+      ],
+      a: 1,
+      exp: "JEP 451 is a preparatory step, not an outright ban. In Java 21 it prints warnings when an agent is loaded dynamically (via VirtualMachine.attach().loadAgent()) into an already-running JVM — the kind of dynamic attach that tools like debuggers, profilers, and Mockito's inline mock maker use. The warning message says 'Dynamic loading of agents will be disallowed by default in a future release.' Static -javaagent flags at launch are completely unaffected. To suppress the warning on Java 21+, launch the target JVM with -XX:+EnableDynamicAgentLoading."
+    },
+    {
+      tag: "Language · JEP 440",
+      q: "Record patterns can be used in which contexts in Java 21?",
+      opts: [
+        "Only in switch case labels",
+        "Only in instanceof expressions",
+        "In both instanceof expressions and switch case labels",
+        "In instanceof, switch, and also as variable declarations"
+      ],
+      a: 2,
+      exp: "Record patterns are valid in both instanceof expressions (if (obj instanceof Point(int x, int y))) and switch case labels (case Point(int x, int y) -> ...). They cannot be used as standalone variable declarations — you can't write Point(int x, int y) = getPoint() outside a pattern context. Both uses were finalized in Java 21 (JEP 440), having been previewed in Java 19 (JEP 405) and Java 20 (JEP 432)."
+    },
+    {
+      tag: "Collections · JEP 431",
+      q: "SequencedMap (added in Java 21) provides sequenced access to map entries. Which method returns the LAST entry without removing it?",
+      opts: [
+        "lastEntry()",
+        "getLast()",
+        "peekLast()",
+        "last()"
+      ],
+      a: 0,
+      exp: "SequencedMap defines firstEntry() and lastEntry() to peek at the first/last Map.Entry without removing them, plus pollFirstEntry() and pollLastEntry() to retrieve and remove. Note the naming difference from SequencedCollection: the collection uses getFirst()/getLast() while the map uses firstEntry()/lastEntry() (no 'get' prefix). reversed() also exists on SequencedMap and returns a reverse-order view. TreeMap and LinkedHashMap both implement SequencedMap in Java 21."
+    },
+    {
+      tag: "Language · JEP 430",
+      q: "String Templates (JEP 430) were introduced as a preview in Java 21. What happened to them subsequently?",
+      opts: [
+        "They were finalized in Java 22",
+        "They were finalized in Java 23",
+        "They remained in preview through Java 23, then were withdrawn entirely — removed without finalization",
+        "They were renamed to 'String Interpolation' and finalized in Java 25"
+      ],
+      a: 2,
+      exp: "String Templates had an unusual fate: introduced as JEP 430 (preview, Java 21) and refined in JEP 459 (2nd preview, Java 22), they were then withdrawn entirely — removed from the JDK without ever being finalized. The feature as designed (StringTemplate, template processors like STR. and FMT.) was found to have fundamental design issues in how template processors composed and how API interaction with future language features would work. A rethink was announced. As of Java 25, no replacement has been finalized. The STR. style interpolation syntax does not exist in any current Java release."
+    },
+    {
+      tag: "Concurrency · Virtual Threads",
+      q: "What is the default thread name format for a virtual thread created with Thread.ofVirtual().start(task) in Java 21 (without calling .name())?",
+      opts: [
+        "\"VirtualThread-N\" where N is a sequential number",
+        "\"\" (empty string)",
+        "The same name as the parent platform thread",
+        "\"Thread-N\" — same as platform thread naming"
+      ],
+      a: 1,
+      exp: "Virtual threads created without an explicit name have an empty string (\"\") as their name by default — not \"VirtualThread-N\" or \"Thread-N\". This is a deliberate design choice reflecting that virtual threads are cheap and plentiful (millions possible), so naming them sequentially as platform threads are would be misleading about their nature. To get named threads, use Thread.ofVirtual().name(\"worker-\", 0) which names them worker-0, worker-1, etc. You can verify: Thread.ofVirtual().start(() -> System.out.println(Thread.currentThread().getName())).join() prints an empty line."
+    },
+    {
+      tag: "Language · JEP 441",
+      q: "In a pattern matching switch, what is the difference between these two cases?\n\ncase Integer i -> ...\ncase Integer i when true -> ...",
+      opts: [
+        "They are exactly equivalent in behavior and compile to the same bytecode",
+        "The first is a 'total type pattern' and the second is a 'guarded pattern' — they behave differently for null",
+        "The second causes a compilation error — 'when true' is not valid",
+        "The first is a total pattern; the second is not — this matters for exhaustiveness checking"
+      ],
+      a: 3,
+      exp: "A case without a guard (case Integer i) is a 'total pattern' that always matches any non-null Integer and contributes to the exhaustiveness of the switch. A guarded case (case Integer i when true) is technically a guarded pattern — even though 'when true' always evaluates to true, the compiler does NOT count it as a total pattern for exhaustiveness purposes. This means a switch that covers all values with only guarded cases is not considered exhaustive without a default. In practice this is a compiler subtlety: always use unguarded cases for exhaustiveness, and guarded cases for conditional branching within a type."
+    }
+  ]
+
+,
+
+  17: [
+    {
+      tag: "Language · JEP 409",
+      q: "Sealed classes (JEP 409, final in Java 17) — which modifier(s) can a permitted subclass use to declare its own extensibility?",
+      opts: [
+        "Only final — no further subclassing allowed",
+        "final, sealed, or non-sealed — each with different meaning",
+        "abstract or concrete — sealed doesn't add new modifiers",
+        "closed or open — the new modifiers introduced by JEP 409"
+      ],
+      a: 1,
+      exp: "Every direct subclass of a sealed class must explicitly declare one of: final (no further subclassing), sealed (can be extended but only by its own permitted list), or non-sealed (re-opens the hierarchy — any class can extend it). 'closed' and 'open' are not Java keywords. 'abstract' is orthogonal — an abstract permitted subclass still needs one of the three. Forgetting to pick one is a compile error."
+    },
+    {
+      tag: "Language · JEP 395",
+      q: "What is a compact constructor in a record, and what can it do that a normal constructor cannot?",
+      opts: [
+        "A constructor with no parameters, used as a no-arg factory method",
+        "A constructor that omits the parameter list and implicitly has access to all components — used to validate or normalize component values before they are assigned",
+        "A private constructor that prevents record instances from being created outside the class",
+        "A constructor generated automatically only when no other constructor is defined"
+      ],
+      a: 1,
+      exp: "A compact constructor omits the parameter list entirely (record Point(int x, int y) { /* compact */ }) and runs before the implicit assignment this.x = x etc. It is used for validation (throw if x < 0) or normalization (x = Math.abs(x)) — you reassign the component parameters, and those values are then stored. Normal constructors do the assignment themselves; compact constructors let the record do the assignment after you validate. The canonical constructor always exists; the compact form is syntactic sugar for writing it."
+    },
+    {
+      tag: "Language · JEP 394",
+      q: "Pattern matching for instanceof (JEP 394, final in Java 16 — available in 17). What is 'flow scoping' for the binding variable?",
+      opts: [
+        "The binding variable is always in scope for the entire method body",
+        "The binding variable is in scope only within a following set of braces",
+        "The binding variable is in scope wherever the compiler can prove the pattern matched — e.g. inside an if-body, or after a short-circuit AND",
+        "The binding variable is in scope only on the exact line where instanceof appears"
+      ],
+      a: 2,
+      exp: "Flow scoping means the binding variable is in scope where the compiler can statically prove the instanceof check succeeded. Inside 'if (obj instanceof String s) { s.length() }' — s is in scope inside the if-body. With '&&' short-circuit: 'if (obj instanceof String s && s.length() > 0)' — s is in scope in the second operand because the first must have been true. But 'if (!(obj instanceof String s) || s.isEmpty())' — s IS in scope in the || right-hand side because the only way to reach it is if the negation was false (i.e. obj WAS a String). The compiler tracks the definite-assignment state."
+    },
+    {
+      tag: "Language · JEP 378",
+      q: "Text blocks (final in Java 15, available in Java 17) strip common leading whitespace. Given this text block where the closing triple-quote is on its own line at column 0, what is the incidental whitespace stripped?",
+      opts: [
+        "All leading whitespace is stripped from every line",
+        "No whitespace is stripped — it is preserved exactly as written",
+        "The minimum leading whitespace across all non-empty lines and the closing delimiter's indentation",
+        "Leading whitespace is stripped only from the first line"
+      ],
+      a: 2,
+      exp: "Java uses 're-indentation': it finds the minimum indentation across all non-blank content lines and the closing triple-quote, then strips exactly that many spaces from the start of each line. If you indent the content 8 spaces and put the closing delimiter at 4 spaces, 4 spaces are stripped from every line. Moving the closing delimiter to column 0 means 0 common indent is subtracted. This lets you indent your source code however you like while controlling the runtime string's leading whitespace precisely via the closing delimiter position."
+    },
+    {
+      tag: "Language · JEP 361",
+      q: "Switch expressions (final in Java 14, available in 17) — what does the yield keyword do in a switch expression?",
+      opts: [
+        "Breaks out of the current switch expression and returns null",
+        "Provides the value of a switch expression from inside a block case (colon-form with a statement block)",
+        "Converts a switch statement into a switch expression",
+        "yield is not a keyword — it is a contextual identifier used as a method name"
+      ],
+      a: 1,
+      exp: "In arrow-form switch expressions (case X -> value), the value after -> is the expression's result directly. In block-form colon cases (case X: { ... }), you use yield value; to provide the result — return would exit the enclosing method, not the switch expression. yield is a restricted identifier (not a full keyword) — you CAN have a method named yield() — but inside a switch block it is always parsed as the yield statement. break with a value (the Java 12 approach) was replaced by yield."
+    },
+    {
+      tag: "Language · JEP 409",
+      q: "Sealed classes in Java 17 — must all permitted subclasses be in the same package or module?",
+      opts: [
+        "Yes — they must be in the same package",
+        "Yes — they must be in the same compilation unit (same .java file)",
+        "No — but they must be in the same module (or the unnamed module)",
+        "No — they can be in any package and any module"
+      ],
+      a: 2,
+      exp: "Permitted subclasses must be in the same module as the sealed class (or the unnamed module, if the sealed class is in the unnamed module). They do NOT need to be in the same package — you can have a sealed class in com.example.shapes and permitted subtypes in com.example.shapes.impl. And they definitely don't need to be in the same source file (unlike sealed classes in some other languages). The module boundary is the constraint; package is not."
+    },
+    {
+      tag: "Language · JEP 395",
+      q: "Which methods does a record automatically generate for record Point(int x, int y)?",
+      opts: [
+        "getX(), getY(), equals(), hashCode(), toString()",
+        "x(), y(), equals(), hashCode(), toString(), and a canonical constructor",
+        "x(), y(), equals(), hashCode(), toString(), clone(), and compareTo()",
+        "Only equals(), hashCode(), and toString() — accessors must be written manually"
+      ],
+      a: 1,
+      exp: "Records generate: (1) accessor methods named after each component — x() and y(), not getX()/getY(); (2) equals() comparing all components; (3) hashCode() derived from all components; (4) toString() listing all components by name; and (5) the canonical constructor (all components as parameters). clone() is NOT generated — records are designed to be passed by value-like semantics and shallow copying via the canonical constructor. compareTo() is not generated either; implement Comparable explicitly if needed."
+    },
+    {
+      tag: "JVM · JEP 403",
+      q: "Strong Encapsulation of JDK Internals (JEP 403, Java 17) — what changed vs Java 16?",
+      opts: [
+        "All --add-opens and --add-exports flags were removed and ignored",
+        "The --illegal-access flag was removed; internal APIs are now strongly encapsulated with no command-line escape hatch",
+        "Reflection into sun.* packages now requires a security manager permission",
+        "Internal APIs were moved to a new jdk.internal.* module requiring a license"
+      ],
+      a: 1,
+      exp: "Java 16 (JEP 396) made strong encapsulation the default but kept the --illegal-access flag as a temporary escape hatch to allow legacy code to still reflectively access JDK internals with a warning. JEP 403 (Java 17) removed --illegal-access entirely — passing it now produces a warning that it is unrecognized and is ignored. The --add-opens and --add-exports flags still work in Java 17 and can be used to selectively open specific packages. The security manager was deprecated separately (JEP 411)."
+    },
+    {
+      tag: "APIs · JEP 356",
+      q: "The new Pseudo-Random Number Generator API (JEP 356, Java 17) introduced which top-level interface that all PRNG algorithms implement?",
+      opts: [
+        "java.util.Random",
+        "java.util.RandomGenerator",
+        "java.util.random.PRNG",
+        "java.security.RandomSource"
+      ],
+      a: 1,
+      exp: "JEP 356 added java.util.RandomGenerator as the new common interface that all PRNG implementations share — including the old java.util.Random, ThreadLocalRandom, and new algorithm-specific implementations like Xoshiro256PlusPlus. RandomGenerator has sub-interfaces like StreamableGenerator, SplittableGenerator, JumpableGenerator, LeapableGenerator for different capabilities. You now write RandomGenerator rng = RandomGeneratorFactory.of(\"L64X128MixRandom\").create() to get a specific algorithm without depending on a concrete class."
+    },
+    {
+      tag: "Language · JEP 395",
+      q: "Records in Java 17 — which of the following is TRUE about record inheritance?",
+      opts: [
+        "Records can extend any concrete class",
+        "Records implicitly extend java.lang.Record and cannot extend any other class",
+        "Records can extend abstract classes but not concrete ones",
+        "Records can extend other records"
+      ],
+      a: 1,
+      exp: "Records implicitly extend java.lang.Record (a new abstract class in java.lang) and are implicitly final — they cannot be extended at all, and they cannot explicitly extend any other class. This is fundamental to the record contract: all state must come from the declared components, which requires knowing the full class hierarchy at compile time. Records CAN implement interfaces — as many as you like. You cannot extend a record from another record either."
+    },
+    {
+      tag: "Language · JEP 394",
+      q: "In Java 17, can the pattern variable declared by instanceof be reassigned?",
+      opts: [
+        "No — pattern variables are implicitly final",
+        "Yes — they are regular local variables that can be reassigned",
+        "Only in Java 16; Java 17 made them final",
+        "Only if the pattern variable is of a primitive type"
+      ],
+      a: 1,
+      exp: "Pattern variables from instanceof ARE reassignable in Java 17 — they are ordinary local variables, not implicitly final. 'if (obj instanceof String s) { s = \"replacement\"; }' compiles and runs fine. This is a deliberate choice made during the preview: making them final would prevent common patterns like 's = s.trim()' after a match. If you want immutability, declare them final explicitly: 'if (obj instanceof final String s)'. This is different from Kotlin's smart casts, which are effectively read-only."
+    },
+    {
+      tag: "Language · JEP 409",
+      q: "A sealed class can be declared with 'non-sealed'. What does this mean for a permitted subclass?",
+      opts: [
+        "The non-sealed subclass is removed from the sealed hierarchy entirely",
+        "The non-sealed subclass re-opens the hierarchy — any class can extend it without restriction",
+        "The non-sealed keyword makes the class package-private",
+        "Non-sealed is only valid for interfaces, not classes"
+      ],
+      a: 1,
+      exp: "non-sealed re-opens the class for unrestricted extension — any class (in any package, with normal visibility access) can extend a non-sealed class. This is sometimes called 'escaping the seal'. For example, if Shape is sealed and permits Circle, Polygon, and Unknown, making Unknown non-sealed means any third-party code can extend Unknown freely. The sealed parent's exhaustiveness guarantee still holds (you must handle Circle, Polygon, Unknown) but Unknown itself has no such guarantee downstream. non-sealed is one of the three required choices (final / sealed / non-sealed) for permitted subclasses."
+    },
+    {
+      tag: "Language · JEP 395",
+      q: "Records are implicitly final in Java 17. What does 'implicitly final' mean in practice?",
+      opts: [
+        "Record instances are immutable — their fields cannot be changed after construction",
+        "The record class itself cannot be subclassed by any other class",
+        "Both: record instances are immutable AND the class cannot be subclassed",
+        "Only that record fields are final — the class can still be extended"
+      ],
+      a: 1,
+      exp: "Implicitly final means the RECORD CLASS cannot be subclassed — any attempt to 'extends Point' where Point is a record is a compile error. It does NOT automatically make instances immutable in the general sense: a record can have mutable component types (e.g. record Holder(List<String> items) allows items.add(...) because the List itself is mutable), and records can have additional non-component mutable fields. The components themselves are final (this.x cannot be reassigned after construction) but the objects they reference may be mutable."
+    },
+    {
+      tag: "Language · JEP 378",
+      q: "In a Java 17 text block, what does the escape sequence \\s do?",
+      opts: [
+        "Inserts a literal backslash followed by s",
+        "Forces a single space at that position, preventing trailing-whitespace stripping",
+        "Represents any whitespace character (like in regex)",
+        "Is a compile error — \\s is not a valid Java escape sequence"
+      ],
+      a: 1,
+      exp: "\\s is a text block escape sequence (JEP 378) that expands to a single space character AND prevents the space-stripping algorithm from removing trailing whitespace on that line. Without \\s, trailing spaces at the end of a text block line are stripped by the compiler. With \\s as the last character on a line, the space is preserved and any spaces before it are also kept. For example: 'hello \\s' produces 'hello  ' (6 chars including the trailing space). This is the main use case — preserving intentional trailing whitespace."
+    },
+    {
+      tag: "Language · JEP 361",
+      q: "In a switch EXPRESSION (arrow form) in Java 17, can execution fall through from one case to the next?",
+      opts: [
+        "Yes — fall-through works the same as in switch statements",
+        "No — each arrow case is independent; there is no fall-through in switch expressions",
+        "Yes, but only if you use the explicit 'fallthrough' keyword",
+        "Only when multiple labels are combined: case A, B -> ..."
+      ],
+      a: 1,
+      exp: "Switch expressions with arrow syntax have no fall-through — each case arrow (->) is completely independent. Case A, B -> value lets multiple labels map to the same result but does not fall through; it is just a convenience for multiple labels sharing one arm. Colon-form switch expressions still allow fall-through syntax but must use yield to produce a value. The no-fall-through guarantee is one of the primary motivations for switch expressions — accidental fall-through bugs are a common source of errors in switch statements."
+    },
+    {
+      tag: "APIs · JEP 415",
+      q: "Context-Specific Deserialization Filters (JEP 415, Java 17) allow you to do what?",
+      opts: [
+        "Deserialize JSON instead of Java serialization format",
+        "Set a per-stream deserialization filter so different ObjectInputStreams can enforce different class-allowlist rules",
+        "Encrypt serialized data on the fly",
+        "Replace Java serialization with a safer binary format"
+      ],
+      a: 1,
+      exp: "JEP 415 adds JVM-wide and per-stream deserialization filters. A global filter (set via ObjectInputFilter.Config.setSerialFilter()) applies to all ObjectInputStreams unless overridden. Context-specific filters let different streams (e.g. one reading trusted internal data and one reading untrusted network data) apply different rules. The new JVM-wide filter factory (set via ObjectInputFilter.Config.setSerialFilterFactory()) can combine a stream's local filter with the global one. This does not change the serialization format or replace it — it is purely about what classes are allowed to be deserialized."
+    },
+    {
+      tag: "JVM · JEP 411",
+      q: "The Security Manager (JEP 411, Java 17) — what is its status?",
+      opts: [
+        "Removed entirely in Java 17",
+        "Deprecated for removal — still functional but will be removed in a future release",
+        "Deprecated but not for removal — retained for compatibility",
+        "Replaced by a new SecurityPolicy class in Java 17"
+      ],
+      a: 1,
+      exp: "JEP 411 deprecated the Security Manager FOR REMOVAL in Java 17 — it is still present and functional but marked @Deprecated(forRemoval=true). This was step one of a multi-release removal process. It was eventually disabled in Java 24 (JEP 486 disallowed it at runtime — using it throws UnsupportedOperationException unless a compatibility flag is set) and will be fully removed in a future version. The Security Manager's protection model (denying specific API calls via a policy file) was largely seen as impractical; most JVMs ran with no SecurityManager installed in practice."
+    },
+    {
+      tag: "Language · JEP 395",
+      q: "In a record's compact constructor, how do you normalize a component value before it is stored?",
+      opts: [
+        "Assign to this.x = normalizedValue;",
+        "Reassign the constructor parameter: x = normalizedValue; (the record then stores it)",
+        "Return the new value from the constructor",
+        "Call super(normalizedValue) to delegate to the canonical constructor"
+      ],
+      a: 1,
+      exp: "In a compact constructor, the record stores the component parameters' values AFTER your constructor body runs. So to normalize, you reassign the parameter variable: 'record Name(String value) { Name { value = value.trim(); } }' — now this.value will be the trimmed version. You do NOT write 'this.value = value.trim()' inside a compact constructor (that is a compile error; the implicit assignments happen after the body). Calling super() is also not valid in a record compact constructor."
+    },
+    {
+      tag: "Language · JEP 409",
+      q: "A sealed interface's permitted types — what constraint do they have that does NOT apply to permitted classes of a sealed class?",
+      opts: [
+        "They must be declared in the same source file",
+        "They must themselves be sealed, final, or non-sealed — but they can also be records, which are implicitly final and can implement sealed interfaces",
+        "They cannot have any instance methods",
+        "There is no difference — permitted types of sealed interfaces follow the same rules as permitted types of sealed classes"
+      ],
+      a: 3,
+      exp: "The rules are essentially identical: a permitted type of a sealed interface must declare itself as sealed, non-sealed, or (in the case of a class) final — or it can be a record (implicitly final) or an enum (implicitly final). Records can implement sealed interfaces and count as their permitted types. The key point is that permitted types of both sealed classes and sealed interfaces follow the same three-choice rule (final/sealed/non-sealed), and the module-boundary constraint applies equally. Option D is correct — there is no meaningful additional constraint for interfaces vs classes in this regard."
+    },
+    {
+      tag: "Language · JEP 394",
+      q: "In Java 17, which of these does NOT compile due to flow-scoping rules?",
+      opts: [
+        "if (x instanceof String s && s.length() > 0) { }",
+        "if (!(x instanceof String s) && s.isEmpty()) { }",
+        "if (x instanceof String s || s.isEmpty()) { }",
+        "Both B and C fail to compile"
+      ],
+      a: 3,
+      exp: "Both B and C fail. In B: '!(x instanceof String s) && s.isEmpty()' — the right side of && is reached only when the left is true, meaning the instanceof FAILED, so s is not defined — compile error. In C: 'x instanceof String s || s.isEmpty()' — the right side of || is reached only when the left is FALSE, meaning instanceof failed, so again s is not defined — compile error. Option A is valid: 's' is in scope on the right of && because the left must have been true. Flow scoping is about definite assignment under the proven-true path only."
+    },
+    {
+      tag: "Language · JEP 378",
+      q: "What does a line continuation escape (\\) at the end of a line inside a text block do in Java 17?",
+      opts: [
+        "It escapes the newline, so the following line is treated as part of the same logical line — no newline in the resulting string",
+        "It inserts two newlines instead of one",
+        "It is a compile error — \\ at end of line is invalid in text blocks",
+        "It preserves trailing whitespace on that line"
+      ],
+      a: 0,
+      exp: "The backslash line continuation (\\) in a text block suppresses the newline at the end of that source line — the text block content continues on the next line as if there was no line break. This lets you write long strings across multiple readable source lines without embedding actual newlines in the runtime string. 'hello \\' followed by 'world' produces 'hello world' (no newline between). This is different from \\s which preserves a space — \\ is about eliminating the line break."
+    },
+    {
+      tag: "Language · JEP 395",
+      q: "Records in Java 17 — can a record implement multiple interfaces?",
+      opts: [
+        "No — records can only implement Serializable",
+        "Yes — records can implement any number of interfaces",
+        "Yes — but only functional interfaces (for lambda compatibility)",
+        "Only one interface is allowed, since records already implicitly extend Record"
+      ],
+      a: 1,
+      exp: "Records can implement any number of interfaces, just like regular classes. 'record Range(int lo, int hi) implements Comparable<Range>, Serializable {}' is perfectly valid. The extends constraint (implicitly extends java.lang.Record) only prevents extending other classes — it does not limit interface implementation at all. Implementing Comparable, Iterable, AutoCloseable, or custom domain interfaces is a common and idiomatic use of records."
+    },
+    {
+      tag: "Language · JEP 409",
+      q: "If a sealed class omits the permits clause entirely, what happens?",
+      opts: [
+        "Compilation error — permits is mandatory for sealed classes",
+        "All classes in the same package are implicitly permitted",
+        "All permitted subclasses must be declared in the same compilation unit (same .java file) — the compiler infers the permits from that file",
+        "The sealed keyword is effectively ignored and the class becomes open"
+      ],
+      a: 2,
+      exp: "When you omit the permits clause on a sealed class, the compiler looks for all subclasses in the SAME SOURCE FILE and infers them as the permitted subtypes — the permits clause is implicit. This is convenient for small hierarchies. If there are no subclasses in the same file, it is a compile error (a sealed class must have at least one permitted subtype). The pattern 'sealed interface Shape permits Circle, Square' is the explicit form; having Circle and Square defined in the same file as Shape with no permits clause achieves the same result."
+    },
+    {
+      tag: "Language · JEP 361",
+      q: "What is a key semantic difference between a switch EXPRESSION and a switch STATEMENT in Java 17?",
+      opts: [
+        "Switch expressions must always have a default case; switch statements never need one",
+        "Switch expressions must be exhaustive (cover every possible value); switch statements do not",
+        "Switch expressions can only use arrow (->) syntax; switch statements can only use colon syntax",
+        "Switch expressions were added in Java 17; switch statements are from Java 1.0"
+      ],
+      a: 1,
+      exp: "Switch expressions must be exhaustive — the compiler requires that every possible input value is handled, either by explicit case labels covering all values or by a default case. This is because a switch expression MUST produce a value; if a case were missing and that value were selected, there would be nothing to return. Switch statements have no such requirement (a missing case just falls through to after the switch with no action). Switch expressions can use both arrow (->) and colon (:) syntax — neither is restricted to one form. Switch expressions predate Java 17: they became final in Java 14."
+    },
+    {
+      tag: "Language · JEP 395",
+      q: "What is the difference between the canonical constructor and a custom constructor in a record?",
+      opts: [
+        "The canonical constructor is private; custom constructors are public",
+        "The canonical constructor takes all components as parameters in declaration order; custom constructors must delegate to the canonical constructor via this(...) as their first statement",
+        "Custom constructors can change the component types; the canonical constructor cannot",
+        "There is no difference — all record constructors behave identically"
+      ],
+      a: 1,
+      exp: "The canonical constructor signature matches the record's components exactly (e.g. Point(int x, int y) for record Point(int x, int y)). Every other constructor must delegate to it via this(...) as the first statement — this ensures the canonical constructor's invariants (compact-constructor validations, etc.) always run. You cannot bypass the canonical constructor in a record the way you can bypass super() delegation timing in regular classes. This guarantees a single point of record construction logic."
+    }
+  ],
+
+  26: [
+    {
+      tag: "APIs · JEP 526",
+      q: "LazyConstant (JEP 526, 2nd preview in Java 26) — what guarantees does it provide?",
+      opts: [
+        "Lazy initialization only — not thread-safe; callers must synchronize externally",
+        "Thread-safe compute-once initialization: the supplier runs exactly once, and all threads see the same result",
+        "Lazy initialization that re-runs the supplier on every call but caches the last result",
+        "A constant that is evaluated at class-load time, not on first access"
+      ],
+      a: 1,
+      exp: "LazyConstant<T> provides compute-once, thread-safe lazy initialization. The supplier you pass to LazyConstant.of(supplier) is called at most once across all threads — once a value is computed, every subsequent get() returns that same instance with a guaranteed happens-before relationship. Multiple threads racing on the first get() may all see the supplier run, but only one result is stored and returned to all. This is the same semantic as a static final field with a static initializer, but deferred to first access rather than class-load time."
+    },
+    {
+      tag: "APIs · JEP 526",
+      q: "What happens when a LazyConstant's computation involves a circular dependency — e.g. constant A's supplier calls B.get(), and B's supplier calls A.get()?",
+      opts: [
+        "A deadlock occurs — both threads block forever waiting for each other",
+        "IllegalStateException is thrown with a cycle-detection message",
+        "The second get() in the cycle returns null to break the cycle",
+        "The JVM detects the cycle and returns a default value based on the type"
+      ],
+      a: 1,
+      exp: "LazyConstant detects cycles and throws IllegalStateException. If thread T1 is computing A and calls B.get(), which tries to compute B by calling A.get(), the JVM detects that A is already being initialized on this thread and throws IllegalStateException immediately rather than deadlocking. The message indicates a self-referential or circular initialization. Even a single-constant self-reference (LazyConstant.of(() -> self.get())) is detected and rejected immediately."
+    },
+    {
+      tag: "APIs · JEP 526",
+      q: "If a LazyConstant's supplier throws an exception on first call, what happens on subsequent get() calls?",
+      opts: [
+        "The exception is cached and re-thrown on every subsequent call",
+        "The supplier is retried on the next get() until it succeeds",
+        "null is returned for all subsequent calls",
+        "An IllegalStateException wrapping the original exception is thrown forever"
+      ],
+      a: 1,
+      exp: "LazyConstant does NOT cache failures. If the supplier throws on the first call, the exception propagates to the caller but the LazyConstant resets — the next get() will retry the supplier. This continues until the supplier succeeds (returns a non-null value) or a null return (which is also rejected — suppliers must return non-null). This retry-on-failure behavior contrasts with caching the exception. Once a value is successfully computed, it is stored permanently and the supplier is never called again."
+    },
+    {
+      tag: "APIs · JEP 526",
+      q: "LazyConstant.equals() — what does it compare?",
+      opts: [
+        "The computed values using the value type's own equals() method",
+        "Identity only — two LazyConstant instances are equal only if they are the same object (a == b)",
+        "The suppliers used to create them",
+        "It throws UnsupportedOperationException because lazy values have no defined equality"
+      ],
+      a: 1,
+      exp: "LazyConstant uses identity-based equality — equals() is inherited from Object and compares object references (==), not the computed values. Two separate LazyConstant instances that happen to compute the same value are NOT equal to each other. This is intentional: LazyConstant represents a computation slot, not a value type. Similarly, hashCode() is the identity hash code, not derived from the wrapped value. To compare computed values, call a.get().equals(b.get()) explicitly."
+    },
+    {
+      tag: "APIs · JEP 526",
+      q: "List.ofLazy(int size, IntFunction<E> supplier) — what is true about element computation?",
+      opts: [
+        "All elements are computed eagerly when the list is created",
+        "Each element is computed on first access and cached; subsequent accesses return the cached value",
+        "Elements are recomputed on every access — no caching occurs",
+        "All elements are computed on the first access to any element"
+      ],
+      a: 1,
+      exp: "List.ofLazy creates a list where each element is computed independently on its first access (by index) using the IntFunction, then cached permanently for that index. Accessing element 3 the first time calls supplier.apply(3) and stores the result; every subsequent access to index 3 returns the cached result without re-calling the supplier. Elements at other indices remain uncomputed until they are first accessed. This is per-element lazy initialization with per-element caching."
+    },
+    {
+      tag: "APIs · JEP 526",
+      q: "Does Set.ofLazy(...) exist in Java 26 (JEP 526, 2nd preview)?",
+      opts: [
+        "Yes — it mirrors List.ofLazy and Map.ofLazy with a Set.ofLazy(supplier) form",
+        "No — only List.ofLazy and Map.ofLazy exist; Set.ofLazy is not implemented",
+        "Yes, but only as an internal JDK class, not a public API",
+        "Yes — added in the 2nd preview alongside improvements to Map.ofLazy"
+      ],
+      a: 1,
+      exp: "Set.ofLazy does not exist in Java 26 (JEP 526, 2nd preview). Only List.ofLazy(int size, IntFunction<E>) and Map.ofLazy(Set<K> keys, Function<K,V> supplier) are part of the preview API. A lazy set is conceptually awkward because sets are key-indexed by their elements themselves (not by position or a separate key), making a meaningful lazy-computation model harder to define. Verified: javap on the JDK 26 preview classes shows no Set.ofLazy method."
+    },
+    {
+      tag: "APIs · JEP 526",
+      q: "Map.ofLazy(Set<K> keys, Function<K,V> valueSupplier) — what does accessing a key that is NOT in the provided key set return?",
+      opts: [
+        "Throws KeyNotFoundException",
+        "Throws IllegalArgumentException",
+        "Returns null — like a regular Map.get() miss",
+        "Throws UnsupportedOperationException because lazy maps have fixed key sets"
+      ],
+      a: 2,
+      exp: "Map.ofLazy behaves like a regular Map for missing keys: get(unknownKey) returns null. The provided Set<K> defines the universe of keys whose values will be lazily computed; accessing a key outside that set is a cache miss and returns null, exactly as a HashMap would. The lazy map does not throw for out-of-set key access. The map is also immutable in structure — you cannot put() new entries or add to the key set after creation."
+    },
+    {
+      tag: "Concurrency · JEP 525",
+      q: "What is the status of Structured Concurrency in Java 26?",
+      opts: [
+        "Final — available without --enable-preview",
+        "6th preview — still requires --enable-preview",
+        "7th preview — still requires --enable-preview",
+        "Removed — replaced by Project Loom's new API"
+      ],
+      a: 1,
+      exp: "Structured Concurrency was in its 6th preview in Java 26 (JEP 525), still requiring --enable-preview. The feature has been through: JEP 453 (Java 21, 1st preview), JEP 462 (Java 22, 2nd), JEP 480 (Java 23, 3rd), JEP 499 (Java 24, 4th), JEP 505 (Java 25, 5th — added Joiner, Configuration), JEP 525 (Java 26, 6th). The API has stabilized significantly in Java 25/26 with the Joiner interface and StructuredTaskScope.Configuration (note: Configuration, not Config — that was a wrong name that appeared in early docs and was corrected)."
+    },
+    {
+      tag: "Concurrency · JEP 525",
+      q: "In Java 26 Structured Concurrency (preview), what is the correct name for the scope configuration type — the one you get via StructuredTaskScope.open(...)?",
+      opts: [
+        "StructuredTaskScope.Config",
+        "StructuredTaskScope.Configuration",
+        "StructuredTaskScope.Options",
+        "StructuredTaskScope.Builder"
+      ],
+      a: 1,
+      exp: "The correct name is StructuredTaskScope.Configuration — verified by javap on the JDK 25/26 preview classes. 'Config' was an error that appeared in early documentation and community writeups. Configuration is a functional interface with methods: withTimeout(Duration), withThreadFactory(ThreadFactory), and withName(String). withName controls what scope.toString() returns (verified: without it you see the default ClassName@hashCode; with withName you see your custom name). Using the wrong name 'Config' causes a compilation error."
+    },
+    {
+      tag: "Concurrency · JEP 525",
+      q: "The Joiner interface in Java 26 Structured Concurrency has four methods. Which one is new in Java 25/26 vs earlier previews?",
+      opts: [
+        "onFork(Subtask<?>)",
+        "onComplete(Subtask<?>)",
+        "onTimeout(StructuredTaskScope<T>)",
+        "result() throws X"
+      ],
+      a: 2,
+      exp: "onTimeout() was added in Java 25 as a new method on the Joiner interface, alongside the existing onFork(), onComplete(), and result(). It is called when the scope's configured timeout (set via .withTimeout()) fires before join() returns. The default implementation of onTimeout() throws StructuredTaskScope.TimeoutException — a new, unchecked exception distinct from java.util.concurrent.TimeoutException. Custom Joiners can override onTimeout() to return partial results instead of throwing, which is one of the key advanced use cases documented in the Java 26 preview."
+    },
+    {
+      tag: "Concurrency · JEP 525",
+      q: "StructuredTaskScope.TimeoutException (thrown by the default onTimeout() implementation) — how is it related to java.util.concurrent.TimeoutException?",
+      opts: [
+        "It is the same class — StructuredTaskScope.TimeoutException is a type alias",
+        "It is a subclass of java.util.concurrent.TimeoutException",
+        "It is a completely separate unchecked exception — NOT related to java.util.concurrent.TimeoutException",
+        "java.util.concurrent.TimeoutException is a subclass of StructuredTaskScope.TimeoutException"
+      ],
+      a: 2,
+      exp: "StructuredTaskScope.TimeoutException is a completely separate class from java.util.concurrent.TimeoutException. The latter is a checked exception (extends Exception); StructuredTaskScope.TimeoutException is an unchecked exception (extends RuntimeException — or more precisely it extends a runtime exception hierarchy). This distinction matters for catch blocks: catch(java.util.concurrent.TimeoutException e) will NOT catch a StructuredTaskScope.TimeoutException. The naming similarity is a genuine naming trap documented in the Java 26 deep-dive on this site."
+    },
+    {
+      tag: "Concurrency · JEP 525",
+      q: "How many built-in Joiner factory methods does StructuredTaskScope provide in Java 26?",
+      opts: [
+        "2 — allSuccessfulOrThrow() and anySuccessfulOrThrow()",
+        "3 — allSuccessfulOrThrow(), anySuccessfulOrThrow(), awaitAll()",
+        "5 — allSuccessfulOrThrow(), anySuccessfulOrThrow(), awaitAllSuccessfulOrThrow(), awaitAll(), allUntil(Predicate)",
+        "4 — allSuccessfulOrThrow(), anySuccessfulOrThrow(), awaitAll(), cancelOnFailure()"
+      ],
+      a: 2,
+      exp: "Java 26 provides exactly 5 built-in Joiner factories: (1) allSuccessfulOrThrow() — returns List<T> of all results, throws FailedException if any subtask fails; (2) anySuccessfulOrThrow() — returns the first successful result, cancels the rest; (3) awaitAllSuccessfulOrThrow() — like allSuccessfulOrThrow but returns Void, used when you don't need the return values; (4) awaitAll() — waits for all, never throws on individual failure, returns Void; (5) allUntil(Predicate<Subtask<?>>) — continues forking/completing until the predicate returns true. cancelOnFailure() does not exist."
+    },
+    {
+      tag: "Concurrency · JEP 525",
+      q: "Structural confinement in StructuredTaskScope — what is WrongThreadException and when is it thrown?",
+      opts: [
+        "Thrown when a virtual thread tries to fork() inside a scope owned by a platform thread",
+        "Thrown when fork() is called from any thread other than the thread that opened the scope",
+        "Thrown when join() is called more than once on the same scope",
+        "Thrown when a subtask tries to access variables from the outer scope"
+      ],
+      a: 1,
+      exp: "WrongThreadException is thrown by fork() (and join()) when called from any thread other than the thread that called StructuredTaskScope.open() — the owner thread. This is the structural confinement rule: only the owner can fork subtasks or join the scope. If you try to call scope.fork(task) from inside a spawned subtask, or from a completely different thread that obtained a reference to the scope, WrongThreadException is thrown immediately. This is verified behavior — the JVM enforces it at runtime, not just by convention."
+    },
+    {
+      tag: "Concurrency · JEP 525",
+      q: "What happens if StructuredTaskScope.close() is called (via try-with-resources) BEFORE join() has been called?",
+      opts: [
+        "close() blocks until all subtasks complete, then returns",
+        "All subtasks are cancelled and the scope closes normally",
+        "IllegalStateException is thrown immediately by close()",
+        "A warning is logged but the scope closes without joining"
+      ],
+      a: 2,
+      exp: "Calling close() without a prior join() throws IllegalStateException immediately — this is enforced as a structural invariant of StructuredTaskScope. The try-with-resources pattern requires that you explicitly call scope.join() before the try block exits; close() checks this and throws if you skip join(). Importantly, verified behavior (from the Java 26 deep-dive on this site): the exception is thrown almost instantly (observed: ~8ms elapsed) even if subtasks are still running — and those subtasks still receive an interrupt signal and are cancelled in the background. No threads are leaked."
+    },
+    {
+      tag: "Concurrency · JEP 525",
+      q: "In Java 26 Structured Concurrency, what does the allUntil(Predicate<Subtask<?>>) joiner do?",
+      opts: [
+        "Cancels all subtasks when the predicate returns true for any one of them",
+        "Runs until all subtasks complete AND the predicate is satisfied for the final state",
+        "Acts as a circuit-breaker: when the predicate returns true on a completed subtask, the scope stops processing new completions",
+        "Filters results — only subtasks satisfying the predicate are included in the return value"
+      ],
+      a: 0,
+      exp: "allUntil(Predicate<Subtask<?>>) calls the predicate after each subtask completes. When the predicate returns true, the scope cancels all remaining running subtasks and join() returns — you don't need to wait for everything to finish. When the predicate returns false, the scope continues waiting. This is useful for 'stop at the first failure' (Predicate: s -> s.state() == FAILED) or 'stop when 2 fail' patterns. The predicate is onComplete logic under the hood, passed as a lambda to the built-in joiner."
+    },
+    {
+      tag: "GC · ZGC",
+      q: "In Java 26, what is the status of ZGC, and how is it enabled?",
+      opts: [
+        "-XX:+UseZGC enables the original single-generation ZGC (generational requires -XX:+ZGenerational)",
+        "-XX:+UseZGC always enables generational ZGC; non-generational mode no longer exists",
+        "-XX:+UseGenerationalZGC is the correct flag; -XX:+UseZGC is deprecated",
+        "ZGC is removed in Java 26 in favor of Project Leyden's AOT collector"
+      ],
+      a: 1,
+      exp: "-XX:+UseZGC always means generational ZGC in Java 26. The non-generational mode was removed entirely in Java 24 (JEP 490) — the code was deleted, not just deprecated. -XX:+ZGenerational became a no-op in Java 24 (the JVM prints 'Ignoring option ZGenerational; support was removed in 24.0') and passing it in Java 26 still produces the same warning. -XX:+UseGenerationalZGC does not exist. ZGC is not removed — it is the recommended low-latency collector for Java 26."
+    },
+    {
+      tag: "Language · Scoped Values",
+      q: "Scoped Values (JEP 506) were finalized in Java 25. What does that mean for Java 26?",
+      opts: [
+        "They still require --enable-preview in Java 26",
+        "They are available without any flags in Java 26 — final features remain final",
+        "They were re-previewed in Java 26 with API changes",
+        "They were removed in Java 26 in favor of virtual thread locals"
+      ],
+      a: 1,
+      exp: "Once a feature is finalized (moved from preview to standard), it remains standard in all subsequent releases — no flags required, and the API does not change incompatibly. Scoped Values finalized in Java 25 (JEP 506) are therefore fully available in Java 26 without --enable-preview. Final features can still be enhanced in later releases, but always in a backward-compatible way. The preview system is a one-way gate: preview -> final, never final -> preview."
+    },
+    {
+      tag: "Language · JEP 488",
+      q: "Primitive Patterns in switch (JEP 488) — what is their status in Java 26?",
+      opts: [
+        "Final — available without --enable-preview",
+        "2nd preview in Java 25, 3rd preview in Java 26 — still requires --enable-preview",
+        "2nd preview in Java 26 — requires --enable-preview",
+        "Withdrawn — removed from the JEP roadmap"
+      ],
+      a: 2,
+      exp: "Primitive patterns in switch were in 2nd preview in Java 26 (JEP 488), requiring --enable-preview. They had their first preview in Java 23 (JEP 455). The feature allows switch and instanceof to work with primitive types: 'case int i when i > 0 -> ...' or 'if (x instanceof byte b)'. They are distinct from pattern matching for switch on reference types (final since Java 21) — primitives required additional JVM work, particularly around narrowing conversions and how primitive patterns interact with sealed types and exhaustiveness."
+    },
+    {
+      tag: "Concurrency · JEP 525",
+      q: "In Java 26 Structured Concurrency, the allSuccessfulOrThrow() Joiner returns results as which type?",
+      opts: [
+        "Stream<T> in encounter order (fork order)",
+        "List<T> in fork order",
+        "Set<T> (unordered)",
+        "T[] as an array in completion order"
+      ],
+      a: 1,
+      exp: "In Java 26 (JEP 525), allSuccessfulOrThrow() returns List<T> in fork order — the order in which subtasks were forked, not the order they completed. This changed from an earlier Java 25 design where it returned Stream<T>. The List<T> return is more predictable and safer (Streams have lazy-evaluation semantics that interact badly with structured concurrency's join() lifecycle). If any subtask fails, StructuredTaskScope.FailedException is thrown wrapping the first failed subtask."
+    },
+    {
+      tag: "APIs · HTTP",
+      q: "What HTTP/3 support was added in Java 26?",
+      opts: [
+        "HTTP/3 became the default protocol for HttpClient when connecting to servers that support it",
+        "HTTP/3 support via QUIC was added as a preview feature in java.net.http",
+        "HTTP/3 was fully finalized with QUIC transport in the java.net.http module",
+        "HTTP/3 support was announced but not yet added to any Java 26 release"
+      ],
+      a: 1,
+      exp: "Java 26 added HTTP/3 over QUIC support to java.net.http as a preview feature (JEP 524). It is not the default — you opt in by configuring the HttpClient with the appropriate protocol version. The java.net.http.HttpClient API surface itself is unchanged; the QUIC transport is wired in underneath. HTTP/3 requires QUIC (UDP-based), which needed new OS-level socket support (DatagramSocket improvements) that was built up over earlier Java releases to make this possible."
     }
   ]
 
