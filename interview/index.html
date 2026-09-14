@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Java Interview Questions — Java Evolution</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root="../" data-page="interview/index.html" data-title="Interview Questions">
+<main>
+  <p class="sec-tag">A living, growing reference</p>
+  <h1>Java Interview Questions</h1>
+  <p class="lead">
+    A running set of real Java interview questions, each with a <strong>short, complete answer</strong>
+    checked against the <strong>official Java documentation</strong> — the API javadoc, the Java Language
+    Specification, or Oracle's own tuning guides — rather than folklore. New questions get added here as
+    they come up; nothing is pruned, so this only grows over time.
+  </p>
+
+  <div class="hero-stats">
+    <div class="stat"><span class="num">7</span><span class="lbl">Core Java questions</span></div>
+    <div class="stat"><span class="num">11</span><span class="lbl">Advanced Java questions</span></div>
+    <div class="stat"><span class="num">100%</span><span class="lbl">answers sourced from official docs</span></div>
+    <div class="stat"><span class="num">↻</span><span class="lbl">updated as new questions come in</span></div>
+  </div>
+
+  <div class="solves">
+    <span class="solves-label">How this page works</span>
+    Two categories today — <strong>Core Java</strong> (language fundamentals: collections, strings,
+    class loading, GC basics) and <strong>Advanced Java</strong> (concurrency, the memory model, and
+    JVM/production internals). Each question is its own heading with a direct link, so you can jump
+    straight to one or skim the whole page. Every answer ends with the exact doc it was checked
+    against — click through if you want the full detail beyond the short answer here.
+  </div>
+
+  <h2>Categories</h2>
+  <div class="card-grid">
+    <a class="card" href="core-java.html">
+      <h3>📗 Core Java</h3>
+      <p>HashMap internals, hashing, String vs StringBuilder vs StringBuffer, ClassLoaders, GC basics,
+      OutOfMemoryError vs StackOverflowError, and reference types.</p>
+    </a>
+    <a class="card" href="advanced-java.html">
+      <h3>⚙️ Advanced Java</h3>
+      <p>Concurrency (ConcurrentHashMap, volatile/synchronized/Atomic, the Java Memory Model,
+      ThreadLocal, CompletableFuture, ForkJoinPool), deadlocks, thread-pool sizing, false sharing, and
+      diagnosing memory leaks &amp; GC pauses in production.</p>
+    </a>
+  </div>
+
+  <div class="tip">
+    <strong>Tip.</strong> Got a new question to add? It gets slotted into whichever category fits and
+    appended to that page — the numbering is per-category, not global, so the list can keep growing
+    without renumbering anything already there.
+  </div>
+
+</main>
+<script src="../assets/nav.js"></script>
+<script src="../assets/highlight.js"></script>
+</body>
+</html>

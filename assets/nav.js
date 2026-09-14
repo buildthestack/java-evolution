@@ -60,6 +60,11 @@
       { href: "topics/jmx.html",                    label: "JMX & JConsole" },
       { href: "topics/jwebserver.html",             label: "Simple Web Server" },
       { href: "topics/java-agent.html",             label: "Java Agent & Instrumentation" }
+    ]},
+    { title: "Interview prep", items: [
+      { href: "interview/index.html",               label: "Overview" },
+      { href: "interview/core-java.html",           label: "Core Java Q&A" },
+      { href: "interview/advanced-java.html",       label: "Advanced Java Q&A" }
     ]}
   ];
 

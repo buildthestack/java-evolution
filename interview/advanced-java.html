@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Advanced Java Interview Questions — Java Evolution</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root="../" data-page="interview/advanced-java.html" data-title="Advanced Java">
+<main>
+  <p class="sec-tag">Interview questions · <a href="index.html">Interview home</a></p>
+  <h1>Advanced Java Interview Questions</h1>
+  <p class="lead">
+    Concurrency, the Java Memory Model, and JVM/production internals — the questions that separate
+    "knows the syntax" from "has debugged this at 2am." Short, complete answers, each checked against
+    the official javadoc or the Java Language Specification.
+  </p>
+
+  <div class="page-toc">
+    <strong>On this page</strong>
+    <a href="#q1">1. How does ConcurrentHashMap achieve thread safety?</a>
+    <a href="#q2">2. What is the difference between volatile, synchronized, and AtomicInteger?</a>
+    <a href="#q3">3. How does the Java Memory Model work?</a>
+    <a href="#q4">4. How would you identify and fix a memory leak in Java?</a>
+    <a href="#q5">5. What problems can ThreadLocal cause in a thread pool?</a>
+    <a href="#q6">6. How does CompletableFuture work internally?</a>
+    <a href="#q7">7. What is ForkJoinPool and how does work-stealing work?</a>
+    <a href="#q8">8. How would you detect and troubleshoot a deadlock?</a>
+    <a href="#q9">9. What happens when you create too many threads in a Java application?</a>
+    <a href="#q10">10. What is false sharing and how can it affect performance?</a>
+    <a href="#q11">11. How would you investigate high GC pauses in production?</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h3 id="q1">1 · How does <code>ConcurrentHashMap</code> achieve thread safety?</h3>
+  <p><code>ConcurrentHashMap</code>'s own javadoc states it plainly: "even though all operations are
+  thread-safe, retrieval operations do <em>not</em> entail locking, and there is <em>not</em> any support
+  for locking the entire table." Reads (<code>get</code>) never block and can overlap with writes — an
+  update for a key has a happens-before relationship with any later read that observes it, so a reader
+  never sees a torn value, only either the old or the fully-written new one. Since Java 8 this is
+  implemented with per-bin synchronization (a CAS to install the first node in an empty bin, a lock on
+  just that bin's head node for everything else) instead of Java 7's fixed 16-segment locking, plus the
+  same treeification as <code>HashMap</code> for long bins — so contention is scoped to individual
+  buckets, not the whole map.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/ConcurrentHashMap.html">java.util.concurrent.ConcurrentHashMap javadoc</a></div>
+
+  <h3 id="q2">2 · What is the difference between <code>volatile</code>, <code>synchronized</code>, and <code>AtomicInteger</code>?</h3>
+  <p>All three solve visibility/atomicity, but at different scopes. <code>volatile</code> only guarantees
+  <em>visibility and ordering</em> — the JLS defines it precisely: "a write to a volatile field
+  happens-before every subsequent read of that field" — but a compound action like <code>count++</code>
+  on a volatile field is still not atomic (it's a read, then a separate write). <code>synchronized</code>
+  adds <em>mutual exclusion</em> on top of visibility: only one thread executes the block at a time, and
+  "an unlock on a monitor happens-before every subsequent lock on that monitor," so it can protect an
+  arbitrarily large critical section, at the cost of threads blocking. <code>AtomicInteger</code> gets
+  both visibility and atomicity for a single variable without blocking, using lock-free compare-and-swap
+  (per its javadoc, built on <code>VarHandle</code>) — ideal for counters, but it doesn't extend to
+  multi-variable invariants the way a <code>synchronized</code> block can.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/javase/specs/jls/se25/html/jls-17.html">JLS §17.4, Memory Model</a> ·
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/atomic/AtomicInteger.html">AtomicInteger javadoc</a></div>
+
+  <h3 id="q3">3 · How does the Java Memory Model work?</h3>
+  <p>The Java Memory Model (JLS Chapter 17.4) defines when a write by one thread is <em>guaranteed</em>
+  to be visible to a read by another, through a relation called <strong>happens-before</strong>: "If one
+  action happens-before another, then the first is visible to and ordered before the second." Without an
+  explicit happens-before edge between two threads, the compiler, JIT, and CPU are all free to reorder or
+  cache operations, so one thread may never observe another's write — this is what makes naively-shared
+  mutable state buggy. The JLS builds happens-before from a few composable rules: program order within
+  one thread, a volatile write happens-before every later read of that field, a monitor unlock
+  happens-before the next lock on that same monitor, a thread start happens-before anything in that
+  thread, and the whole relation is transitive. <code>synchronized</code>, <code>volatile</code>, and the
+  <code>java.util.concurrent</code> classes are all built on top of these same rules.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/javase/specs/jls/se25/html/jls-17.html#jls-17.4.5">JLS §17.4.5, Happens-before Order</a></div>
+
+  <h3 id="q4">4 · How would you identify and fix a memory leak in Java?</h3>
+  <p>Oracle's troubleshooting guide defines a memory leak plainly: "an application unintentionally holds
+  references to Java objects or classes, preventing them from being garbage collected," showing up as
+  "the live set increases over time after the application has reached a stable state and is under a
+  stable load." Identify it by watching the live set (heap used right after a full GC) trend upward with
+  JConsole or JDK Mission Control; once confirmed, take a heap dump — <code>jcmd &lt;pid&gt;
+  GC.heap_dump filename=heap.hprof</code> (or automatically on failure with
+  <code>-XX:+HeapDumpOnOutOfMemoryError</code>) — and load it into JDK Mission Control or Eclipse MAT to
+  find the dominant retained-object path back to a GC root.</p>
+  <p>The fix is almost always one of: a static collection or cache that's never trimmed,
+  listeners/callbacks registered but never unregistered, or a <code>ThreadLocal</code> never removed on a
+  pooled thread (see the next question) — the dump's reference-chain view tells you which.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/21/troubleshoot/troubleshooting-memory-leaks.html">Troubleshoot Memory Leaks, Java Troubleshooting Guide</a></div>
+
+  <h3 id="q5">5 · What problems can <code>ThreadLocal</code> cause in a thread pool?</h3>
+  <p><code>ThreadLocal</code>'s own javadoc is the whole answer: "each thread holds an implicit reference
+  to its copy of a thread-local variable as long as the thread is alive and the <code>ThreadLocal</code>
+  instance is accessible; after a thread goes away, all of its copies... are subject to garbage
+  collection." A pool thread never "goes away" between tasks — it's reused — so a value one task sets and
+  forgets to clear is still sitting there, visible to the next unrelated task the pool runs on that same
+  thread. That causes two distinct bugs at once: a slow memory leak (large values pinned for the thread's
+  entire lifetime) and stale/cross-task data leakage (task B silently reads task A's leftover value). The
+  fix the javadoc points at directly is calling <code>remove()</code> — typically in a
+  <code>finally</code> block around the task — rather than relying on it being overwritten.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/ThreadLocal.html">java.lang.ThreadLocal javadoc</a></div>
+
+  <h3 id="q6">6 · How does <code>CompletableFuture</code> work internally?</h3>
+  <p><code>CompletableFuture</code> is a push-based, callback-driven <code>CompletionStage</code>:
+  chaining methods like <code>thenApply</code>/<code>thenAccept</code>/<code>thenCompose</code> register
+  a dependent action that fires automatically the moment the stage it depends on completes — no polling.
+  Per the javadoc, for the non-<code>Async</code> methods "actions supplied for dependent completions...
+  may be performed by the thread that completes the current <code>CompletableFuture</code>, or by any
+  other caller of a completion method" — i.e. there's no dedicated worker, whichever thread happens to
+  finish the upstream stage (or later attaches the callback, if it's already done) just runs it inline.
+  The <code>*Async</code> variants opt out of that: "all async methods without an explicit
+  <code>Executor</code> argument... are performed using <code>ForkJoinPool.commonPool()</code>," or a
+  supplied <code>Executor</code> if you pass one.</p>
+  <p>That default matters in practice: the common pool is shared JVM-wide, so submitting a blocking or
+  long-running task to it via a plain <code>supplyAsync</code> can starve unrelated async work elsewhere
+  in the same JVM — the usual fix is passing a dedicated <code>Executor</code> for anything that
+  blocks.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/CompletableFuture.html">java.util.concurrent.CompletableFuture javadoc</a></div>
+
+  <h3 id="q7">7 · What is <code>ForkJoinPool</code> and how does work-stealing work?</h3>
+  <p><code>ForkJoinPool</code>'s javadoc names the mechanism directly: it "differs from other kinds of
+  <code>ExecutorService</code> mainly by virtue of employing <em>work-stealing</em>: all threads in the
+  pool attempt to find and execute tasks submitted to the pool and/or created by other active tasks
+  (eventually blocking waiting for work if none exist)." Each worker thread owns its own double-ended
+  queue; it pushes and pops its <em>own</em> newly-forked subtasks from one end (LIFO, so it works
+  depth-first on the task it just created — good cache locality), while idle workers with nothing left
+  steal from the <em>other</em> end of a busy worker's deque (FIFO), which minimizes contention since a
+  worker's own end and the "stolen from" end are almost always different. That design, per the javadoc,
+  "enables efficient processing when most tasks spawn other subtasks... as well as when many small tasks
+  are submitted to the pool from external clients" — exactly the divide-and-conquer shape
+  <code>RecursiveTask</code>/<code>RecursiveAction</code> and parallel streams use it for.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/ForkJoinPool.html">java.util.concurrent.ForkJoinPool javadoc</a></div>
+
+  <h3 id="q8">8 · How would you detect and troubleshoot a deadlock?</h3>
+  <p>Programmatically, <code>ThreadMXBean</code> has two purpose-built methods:
+  <code>findMonitorDeadlockedThreads()</code> finds cycles where each thread "owns one monitor while
+  trying to obtain another monitor already held by another... thread in a cycle" (plain
+  <code>synchronized</code> deadlocks only), while <code>findDeadlockedThreads()</code> covers the wider
+  case — cycles over "object monitors <em>or</em> ownable synchronizers," so it also catches deadlocks
+  built from <code>java.util.concurrent.locks.Lock</code>s. Operationally, the fastest path is a thread
+  dump — <code>jstack &lt;pid&gt;</code> "attaches to the specified process and prints the stack traces
+  of all threads," and automatically calls out any deadlock it finds, listing exactly which thread holds
+  which lock while waiting for which other thread's lock.</p>
+  <p>Once you see the cycle, the fix is structural: enforce one global, consistent lock-acquisition order
+  everywhere, or replace nested <code>synchronized</code> with <code>tryLock(timeout)</code> so a thread
+  backs off instead of blocking forever.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.management/java/lang/management/ThreadMXBean.html">java.lang.management.ThreadMXBean javadoc</a> ·
+  <a href="https://docs.oracle.com/en/java/javase/21/troubleshoot/diagnostic-tools.html">jstack, Java Troubleshooting Guide</a></div>
+
+  <h3 id="q9">9 · What happens when you create too many threads in a Java application?</h3>
+  <p><code>Thread</code>'s own javadoc draws the line clearly: platform threads "are typically mapped 1:1
+  to kernel threads scheduled by the operating system," "will usually have a large stack and other
+  resources that are maintained by the operating system," and — in the javadoc's own words — "may be a
+  limited resource." Each one costs real native memory (a fixed-size stack, default around 512KB–1MB,
+  controlled by <code>-Xss</code>) plus an entry in the OS's thread table; push past what the OS/JVM
+  combination allows and you get <code>OutOfMemoryError: unable to create native thread</code>, often
+  well before that ever-growing context-switching overhead alone tanks throughput. The javadoc's own
+  recommended fix for high-concurrency, I/O-bound workloads is virtual threads: "a single Java virtual
+  machine may support millions of virtual threads," at the cost that they're explicitly "not intended for
+  long running CPU intensive operations."</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/Thread.html">java.lang.Thread javadoc</a></div>
+
+  <h3 id="q10">10 · What is false sharing and how can it affect performance?</h3>
+  <p>False sharing is a CPU cache-coherence effect, not something the JLS or any Java API defines — it
+  happens when two unrelated variables written by different threads happen to land on the same CPU cache
+  line, so an update from one core invalidates that whole line for every other core, forcing expensive
+  cross-core cache traffic even though the threads never touch each other's actual data. The JDK's own
+  (internal) answer is JEP 142's <code>@Contended</code> annotation, added in Java 8: applied to a field,
+  the JVM pads memory around it so it lands alone on its own cache line. It isn't a supported public API
+  (it targets JDK-internal classes and needs <code>-XX:-RestrictContended</code> to use elsewhere), but
+  its effect is visible in the standard library: <code>LongAdder</code>'s javadoc describes exactly this
+  trade-off in user-facing terms — "when updates... are contended across threads, the set of variables
+  may grow dynamically to reduce contention" — striping a hot counter across multiple padded cells
+  specifically so concurrent writers land on different cache lines instead of fighting over one.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/atomic/LongAdder.html">java.util.concurrent.atomic.LongAdder javadoc</a></div>
+
+  <h3 id="q11">11 · How would you investigate high GC pauses in production?</h3>
+  <p>Start with logging: Oracle's GC Tuning Guide says "a good start is to use the
+  <code>-Xlog:gc*=debug</code> option," which gives "a detailed overview during and outside the pauses
+  about garbage collection activity... including the type of collection and a breakdown of time spent in
+  particular phases of the pause." Narrower tags dig further — <code>gc+cpu=info</code> shows the
+  user/system/real time split per pause (useful for telling GC-bound from OS-scheduling-bound stalls),
+  <code>gc+heap=info</code> shows region occupancy. For always-on production monitoring with near-zero
+  overhead, JFR is the better fit than continuous <code>-Xlog</code>: it can run permanently and its
+  recordings capture GC pause events (and, for leak-adjacent pauses, <code>OldObjectSample</code>) for
+  later analysis in JDK Mission Control, without needing to reproduce the issue on demand.</p>
+  <p>If pauses are simply too long relative to your latency budget, the guide's own tuning knob is
+  <code>-XX:MaxGCPauseMillis</code> — a <em>goal</em> G1 tries to hit by sizing regions and picking how
+  much to collect per cycle, not a hard cap, so setting it unrealistically low just causes more frequent,
+  smaller pauses instead.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/gctuning/garbage-first-garbage-collector-tuning.html">Garbage-First Garbage Collector Tuning, Java 25</a></div>
+
+</main>
+<script src="../assets/nav.js"></script>
+<script src="../assets/highlight.js"></script>
+</body>
+</html>

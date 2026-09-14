@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Core Java Interview Questions — Java Evolution</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root="../" data-page="interview/core-java.html" data-title="Core Java">
+<main>
+  <p class="sec-tag">Interview questions · <a href="index.html">Interview home</a></p>
+  <h1>Core Java Interview Questions</h1>
+  <p class="lead">
+    Language fundamentals: how the collections you use every day actually work, how strings and GC
+    behave under the hood, and how classes get loaded. Short, complete answers, each checked against
+    the official <code>java.base</code> javadoc.
+  </p>
+
+  <div class="page-toc">
+    <strong>On this page</strong>
+    <a href="#q1">1. How does HashMap work internally in Java 8+?</a>
+    <a href="#q2">2. What happens when two keys have the same hash code?</a>
+    <a href="#q3">3. What happens when an object becomes eligible for Garbage Collection?</a>
+    <a href="#q4">4. What causes OutOfMemoryError vs StackOverflowError?</a>
+    <a href="#q5">5. How does the JVM ClassLoader work?</a>
+    <a href="#q6">6. What is the difference between String, StringBuilder, and StringBuffer?</a>
+    <a href="#q7">7. What are Weak, Soft, and Phantom References?</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h3 id="q1">1 · How does <code>HashMap</code> work internally in Java 8+?</h3>
+  <p><code>HashMap</code> stores entries in an array of buckets, sized by its <em>capacity</em> (default
+  16) and grown based on its <em>load factor</em> (default 0.75) — per the javadoc, "when the number of
+  entries in the hash table exceeds the product of the load factor and the current capacity, the hash
+  table is rehashed" so it ends up with roughly twice the buckets. A key's bucket is chosen from its
+  <code>hashCode()</code>. Within a bucket, colliding entries are chained; the javadoc itself notes that
+  "when keys are <code>Comparable</code>, this class may use comparison order among keys to help break
+  ties." Concretely (per the JDK's own <code>HashMap</code> source), since Java 8 a bucket whose chain
+  grows past 8 entries — in a table with at least 64 buckets — is converted from a linked list into a
+  balanced red-black tree, turning worst-case lookup in that bucket from O(n) into O(log n); it converts
+  back to a list if the chain shrinks below 6.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/HashMap.html">java.util.HashMap javadoc</a></div>
+
+  <h3 id="q2">2 · What happens when two keys have the same hash code?</h3>
+  <p>A shared hash code just means two keys land in the same bucket — it does not mean the keys are
+  equal. <code>HashMap</code> resolves this by storing every colliding entry in that bucket's chain (or
+  tree, once it's long enough — see above) and calling <code>equals()</code> to tell the keys apart on
+  <code>get</code>/<code>put</code>/<code>remove</code>. This is exactly why the
+  <code>Object.hashCode()</code> contract only requires that "if two objects are equal according to the
+  <code>equals</code> method, then calling the <code>hashCode</code> method on each of the two objects
+  must produce the same integer result" — the reverse is explicitly <em>not</em> required: unequal
+  objects producing the same hash code is legal, just something that "may improve the performance of
+  hash tables" to avoid.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/Object.html#hashCode()">Object.hashCode() javadoc</a> ·
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/HashMap.html">java.util.HashMap javadoc</a></div>
+
+  <h3 id="q3">3 · What happens when an object becomes eligible for Garbage Collection?</h3>
+  <p>The <code>java.lang.ref</code> package javadoc defines a precise reachability ladder, and an object
+  becomes GC-eligible when it drops off the bottom of it. An object is <em>strongly reachable</em> if
+  reachable without going through any <code>Reference</code> object; <em>softly</em>/<em>weakly
+  reachable</em> if only reachable by traversing a <code>SoftReference</code>/<code>WeakReference</code>;
+  and finally, per the spec, "an object is <em>unreachable</em>, and therefore eligible for reclamation,
+  when it is not reachable in any of the above ways." In practice: once no chain of strong references
+  from a GC root reaches an object, it's eligible — the collector is free to reclaim it (after processing
+  any weak/soft/phantom references pointing to it).</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/ref/package-summary.html">java.lang.ref package javadoc</a></div>
+
+  <h3 id="q4">4 · What causes <code>OutOfMemoryError</code> vs <code>StackOverflowError</code>?</h3>
+  <p>Both are subclasses of <code>VirtualMachineError</code> but signal opposite kinds of exhaustion. Per
+  its javadoc, <code>OutOfMemoryError</code> is "thrown when the Java Virtual Machine cannot allocate an
+  object because it is out of memory, and no more memory could be made available by the garbage
+  collector" — the heap (or metaspace) is full. <code>StackOverflowError</code>, per its javadoc, is
+  "thrown when a stack overflow occurs because an application recurses too deeply" — one thread's call
+  stack ran out of space, almost always from unbounded or infinite recursion, independent of how much
+  heap is free.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/OutOfMemoryError.html">OutOfMemoryError javadoc</a> ·
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/StackOverflowError.html">StackOverflowError javadoc</a></div>
+
+  <h3 id="q5">5 · How does the JVM ClassLoader work?</h3>
+  <p><code>ClassLoader</code> uses a delegation model: per its javadoc, "each instance of
+  <code>ClassLoader</code> has an associated parent class loader," and "when requested to find a class or
+  resource, a <code>ClassLoader</code> instance will usually delegate the search... to its parent class
+  loader before attempting to find the class or resource itself." The JDK has three built-in loaders
+  forming a chain — the bootstrap loader (loads core <code>java.base</code> classes, has no parent), the
+  platform loader (other JDK/Java SE classes), and the system/application loader (the application
+  classpath). Concretely, <code>loadClass</code> first calls <code>findLoadedClass</code> to check a
+  cache, then delegates to the parent, and only if the parent can't find it does it call
+  <code>findClass</code> itself — which is why a class you define can never shadow one already loaded by
+  an ancestor.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/ClassLoader.html">java.lang.ClassLoader javadoc</a></div>
+
+  <h3 id="q6">6 · What is the difference between <code>String</code>, <code>StringBuilder</code>, and <code>StringBuffer</code>?</h3>
+  <p>All three represent character sequences, but differ in mutability and thread safety. Per its
+  javadoc, <code>String</code> is immutable: "strings are constant; their values cannot be changed after
+  they are created... because String objects are immutable they can be shared." <code>StringBuffer</code>
+  and <code>StringBuilder</code> are both mutable, but <code>StringBuffer</code> is, per its own javadoc,
+  "a thread-safe, mutable sequence of characters" whose "methods are synchronized where necessary."
+  <code>StringBuilder</code>, added in Java 5, is explicitly the unsynchronized alternative — its javadoc
+  says it "provides an API compatible with <code>StringBuffer</code>, but with no guarantee of
+  synchronization," and recommends it "be used in preference to <code>StringBuffer</code> as it will be
+  faster under most implementations" whenever the buffer is only touched by one thread.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/String.html">String javadoc</a> ·
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/StringBuilder.html">StringBuilder javadoc</a></div>
+
+  <h3 id="q7">7 · What are Weak, Soft, and Phantom References?</h3>
+  <p>These are the three "weaker than strong" reference types in <code>java.lang.ref</code>, ordered from
+  least to most aggressively collected. Per the package javadoc: <strong>soft references</strong> "are
+  for implementing memory-sensitive caches" — the JVM tries to hold onto softly-reachable objects and
+  generally only clears them right before it would otherwise throw <code>OutOfMemoryError</code>.
+  <strong>Weak references</strong> "are for implementing canonicalizing mappings that do not prevent
+  their keys (or values) from being reclaimed" — cleared as soon as an object is only weakly reachable,
+  no memory pressure needed (this is what backs <code>WeakHashMap</code>). <strong>Phantom
+  references</strong> "are for scheduling post-mortem cleanup actions" — the referent is already
+  finalized and unreachable through normal means, so <code>get()</code> always returns <code>null</code>;
+  a phantom reference is only useful paired with a <code>ReferenceQueue</code>, which is how the program
+  is notified to run cleanup after the object is really gone.</p>
+  <div class="note"><strong>Source:</strong>
+  <a href="https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/ref/package-summary.html">java.lang.ref package javadoc</a></div>
+
+</main>
+<script src="../assets/nav.js"></script>
+<script src="../assets/highlight.js"></script>
+</body>
+</html>
