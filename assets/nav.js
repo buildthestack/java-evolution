@@ -51,6 +51,7 @@
     ]},
     { title: "Deep dives — JVM & memory", items: [
       { href: "topics/jvm-memory-gc.html",          label: "JVM Memory Model & GC" },
+      { href: "topics/zgc.html",                    label: "ZGC deep dive" },
       { href: "topics/aot-cache.html",               label: "AOT Cache" }
     ]},
     { title: "Deep dives — tooling", items: [

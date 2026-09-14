@@ -383,7 +383,9 @@ java -Xmx64m -Xlog:gc+age=trace YourApp.java
   <p>A scalable, low-latency concurrent collector. Verified from Oracle's docs: pause times independent
   of heap size, "without stopping application threads for more than a millisecond," scales from a few
   hundred MB to 16 TB. <strong>Verified: as of JDK 24, ZGC is generational by default</strong> <span class="badge jep">JEP 474</span> — the
-  old <code>-XX:+ZGenerational</code> and non-generational ZGC have been removed entirely <span class="badge jep">JEP 490</span>.</p>
+  old <code>-XX:+ZGenerational</code> and non-generational ZGC have been removed entirely <span class="badge jep">JEP 490</span>.
+  Full deep dive — colored pointers, load/store barriers, and a verified ZGC-vs-G1 pause benchmark →
+  <a href="zgc.html">ZGC deep dive</a>.</p>
 
   <h3>Shenandoah — <code>-XX:+UseShenandoahGC</code></h3>
   <p>Verified from the OpenJDK wiki: "the low pause time garbage collector... pause times are no longer

@@ -59,6 +59,7 @@
 <a href="#pg-topics-streams-gatherers-html">Stream Gatherers — complete guide</a>
 <a href="#pg-topics-ffm-api-html">Foreign Function &amp; Memory API — complete guide</a>
 <a href="#pg-topics-jvm-memory-gc-html">JVM Memory Model &amp; Garbage Collection — complete guide</a>
+<a href="#pg-topics-zgc-html">ZGC — complete deep dive</a>
 <a href="#pg-topics-aot-cache-html">AOT Cache — complete guide</a>
 <a href="#pg-topics-jshell-html">JShell — complete guide</a>
 <a href="#pg-topics-jlink-jpackage-html">jlink &amp; jpackage — complete guide</a>
@@ -9200,7 +9201,9 @@ java -Xmx64m -Xlog:gc+age=trace YourApp.java
   <p>A scalable, low-latency concurrent collector. Verified from Oracle's docs: pause times independent
   of heap size, "without stopping application threads for more than a millisecond," scales from a few
   hundred MB to 16 TB. <strong>Verified: as of JDK 24, ZGC is generational by default</strong> <span class="badge jep">JEP 474</span> — the
-  old <code>-XX:+ZGenerational</code> and non-generational ZGC have been removed entirely <span class="badge jep">JEP 490</span>.</p>
+  old <code>-XX:+ZGenerational</code> and non-generational ZGC have been removed entirely <span class="badge jep">JEP 490</span>.
+  Full deep dive — colored pointers, load/store barriers, and a verified ZGC-vs-G1 pause benchmark →
+  <a href="#pg-topics-zgc-html">ZGC deep dive</a>.</p>
 
   <h3>Shenandoah — <code>-XX:+UseShenandoahGC</code></h3>
   <p>Verified from the OpenJDK wiki: "the low pause time garbage collector... pause times are no longer
@@ -9464,6 +9467,505 @@ jcmd $! GC.heap_info      # run this a few times while it's executing</code></pr
     <h3>False Sharing and @Contended</h3>
     <p>False sharing occurs when independent variables share a cache line, causing cache invalidation overhead. The <code>@jdk.internal.vm.annotation.Contended</code> annotation pads fields or classes to isolate them in separate cache lines, improving concurrent performance.</p>
 </section>
+</section>
+<section id="pg-topics-zgc-html" class="print-page">
+  <p class="sec-tag">Deep dive · JVM &amp; memory</p>
+  <h1>ZGC — The Z Garbage Collector <span class="badge added">Java 11</span></h1>
+  <p class="lead">
+    ZGC is the JVM's answer to one question: what if a garbage collector's pause times simply didn't
+    grow with heap size — not at 1GB, not at 1TB? It gets there by doing almost everything
+    <em>concurrently</em>, alongside your running application threads, and by hiding a small amount of
+    GC bookkeeping directly inside object references themselves. This page goes from "what is it" to
+    the exact bits in a pointer, using real output captured on a JDK 25 install, cross-checked against
+    the OpenJDK JEPs, the ZGC wiki, Oracle's GC Tuning Guide, and dev.java.
+  </p>
+
+  <div class="hero-stats">
+    <div class="stat"><span class="num">JDK 11</span><span class="lbl">introduced, experimental <span class="badge jep">JEP 333</span></span></div>
+    <div class="stat"><span class="num">JDK 21</span><span class="lbl">generational mode arrives <span class="badge jep">JEP 439</span></span></div>
+    <div class="stat"><span class="num">JDK 24</span><span class="lbl">only mode left <span class="badge jep">JEP 490</span></span></div>
+    <div class="stat"><span class="num">16 TB</span><span class="lbl">max heap, per Oracle's own docs</span></div>
+    <div class="stat"><span class="num">&lt;1ms</span><span class="lbl">typical STW pause, verified below</span></div>
+  </div>
+  <div class="solves">
+    <span class="solves-label">The problem it solves</span>
+    Even G1 — the default collector since Java 9 — still stops every application thread for marking and
+    compaction work that scales roughly with how much live data there is. On a small heap that's fine;
+    on a 32GB+ heap serving low-latency traffic, that pause becomes visible to users. ZGC's entire design
+    is built around one constraint: <strong>no pause may be proportional to heap size or live-set
+    size</strong> — verified later on this page with a real 37ms-vs-0.009ms head-to-head against G1 on
+    an identical workload.
+  </div>
+
+  <div class="page-toc">
+    <strong>On this page</strong>
+    <a href="#what">1. What ZGC is, and why it exists</a>
+    <a href="#timeline">2. Version timeline — every ZGC JEP, verified</a>
+    <a href="#core">3. The core idea: region-based heap, concurrent everything</a>
+    <a href="#original">4. How the original ZGC worked (JDK 11–20) — colored pointers &amp; multi-mapping</a>
+    <a href="#generational">5. Generational ZGC (JDK 21+) — what changed, and what you run today</a>
+    <a href="#rss-myth">6. The "tripled memory" illusion — real history, verified fixed</a>
+    <a href="#gclog">7. Reading a real ZGC log, phase by phase</a>
+    <a href="#benchmark">8. Verified benchmark — ZGC vs G1, identical workload</a>
+    <a href="#tuning">9. Tuning flags reference</a>
+    <a href="#whentouse">10. When to reach for ZGC (and when not to)</a>
+    <a href="#platforms">11. Platform support timeline</a>
+    <a href="#comparison">12. ZGC vs G1 vs Shenandoah</a>
+    <a href="#cheat">13. Cheat sheet</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="what">1 · What ZGC Is, and Why It Exists</h2>
+  <p>ZGC (the <strong>Z</strong> Garbage Collector — the letter isn't an acronym for anything) is a
+  concurrent, region-based, compacting garbage collector built by Oracle and merged into OpenJDK as
+  <strong>JEP 333</strong> in <strong>JDK 11</strong>. Its one design goal, stated in its own JEP: keep
+  every stop-the-world pause "not exceed 10ms" (an early target it has since blown well past, in the
+  good direction — verified pauses below are sub-millisecond) and keep that pause time
+  <strong>independent of heap size, live-set size, and root-set size</strong>, so a 100MB heap and a
+  10TB heap see the same worst-case pause.</p>
+  <p>It gets there with a technique borrowed from research garbage collectors:
+  <strong>colored pointers</strong> — a handful of otherwise-idle bits inside every 64-bit object
+  reference are used to store GC metadata directly in the pointer. Reading a reference runs through a
+  tiny piece of injected code called a <strong>load barrier</strong> that checks those bits and, if the
+  object has moved or hasn't been processed yet, fixes the pointer right there, in the reading thread,
+  before handing back a valid reference. No thread ever needs a global pause to "catch up" — each thread
+  heals the pointers it actually touches, exactly when it touches them.</p>
+  <div class="note">This page covers two genuinely different ZGC architectures that both answer to
+  <code>-XX:+UseZGC</code>, because the implementation was substantially rewritten mid-life: the
+  original single-generation design (JDK 11–20) and <strong>Generational ZGC</strong> (JDK 21+, the
+  default since JDK 23, the <em>only</em> mode since JDK 24 — i.e. what JDK 25/26 actually run). §4 and
+  §5 cover each in turn, clearly labeled, because a lot of ZGC material online (including a PDF I
+  cross-checked while writing this) describes the original architecture as if it were still current.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="timeline">2 · Version Timeline — Every ZGC JEP, Verified</h2>
+  <p>Fetched directly from each JEP on openjdk.org — exact numbers, titles, and target versions:</p>
+  <table class="data">
+    <tr><th>JEP</th><th>Title</th><th>JDK</th><th>What changed</th></tr>
+    <tr><td>333</td><td>ZGC: A Scalable Low-Latency Garbage Collector (Experimental)</td><td>11</td>
+    <td>Introduced ZGC — colored pointers, load barriers, concurrent relocation. Linux/x64 only; the JEP
+    itself states "it is not a goal to provide working implementations for platforms other than
+    Linux/x64."</td></tr>
+    <tr><td>364</td><td>ZGC on macOS (Experimental)</td><td>14</td>
+    <td>Ports multi-mapping to macOS via Mach VM APIs; had to work around macOS ASLR conflicting with
+    ZGC's large contiguous address-space reservation.</td></tr>
+    <tr><td>365</td><td>ZGC on Windows (Experimental)</td><td>14</td>
+    <td>Ports multi-mapping to Windows; needs Windows build ≥ 1803 for the placeholder
+    memory-reservation APIs it relies on.</td></tr>
+    <tr><td>377</td><td>ZGC: A Scalable Low-Latency Garbage Collector (Production)</td><td>15</td>
+    <td>Drops the <code>-XX:+UnlockExperimentalVMOptions</code> requirement. "All commonly used
+    platforms are now supported" — Linux/x86_64, Linux/aarch64, Windows, macOS.</td></tr>
+    <tr><td>439</td><td>Generational ZGC</td><td>21</td>
+    <td>Adds young/old generations. <strong>Abandons multi-mapped memory entirely</strong> — verbatim
+    from the JEP: "Non-generational ZGC uses multi-mapped memory to reduce the overhead of load
+    barriers. Generational ZGC instead uses explicit code in the load and store barriers." Opt-in via
+    <code>-XX:+UseZGC -XX:+ZGenerational</code>.</td></tr>
+    <tr><td>474</td><td>ZGC: Generational Mode by Default</td><td>23</td>
+    <td>Flips the <code>ZGenerational</code> default from <code>false</code> to <code>true</code>.
+    <code>-XX:+UseZGC</code> alone now means generational; explicitly passing the flag either way starts
+    printing a deprecation warning.</td></tr>
+    <tr><td>490</td><td>ZGC: Remove the Non-Generational Mode</td><td>24</td>
+    <td>Deletes the old single-generation code and tests outright. <code>ZGenerational</code> becomes an
+    obsolete no-op — verified below, this JDK 25 install prints "support was removed in 24.0" if you
+    still pass it.</td></tr>
+  </table>
+  <div class="warn"><strong>Verified directly on this JDK 25 (Temurin 25.0.4) install:</strong>
+  <pre><code class="bash">$ java -XX:+UseZGC -XX:+ZGenerational -version
+OpenJDK 64-Bit Server VM warning: Ignoring option ZGenerational; support was removed in 24.0
+openjdk version "25.0.4" 2026-07-21 LTS</code></pre></div>
+
+  <!-- ============================================================ -->
+  <h2 id="core">3 · The Core Idea: Region-Based Heap, Concurrent Everything</h2>
+  <p>Both ZGC eras share the same foundational structure, which is what actually delivers the pause-time
+  guarantee — the colored-pointer machinery in §4/§5 is <em>how</em> ZGC gets away with doing all this
+  concurrently, not the source of the low pauses by itself.</p>
+  <table class="data">
+    <tr><th>Piece</th><th>What it is</th></tr>
+    <tr><td><strong>Regions</strong></td><td>The heap is divided into regions of three size classes —
+    per dev.java's own architecture reference: <strong>Small</strong> (2MB, for objects ≤256KB),
+    <strong>Medium</strong> (4–32MB, scales with max heap size, disabled below a 128MB max heap), and
+    <strong>Large</strong> (sized in 2MB increments to fit one humongous object). Every GC cycle works
+    region by region, never "the whole heap" at once.</td></tr>
+    <tr><td><strong>Concurrent marking</strong></td><td>Finding which objects are still alive happens
+    while the application keeps running — only tiny bracketing pauses (§7) mark the very start/end of
+    the phase.</td></tr>
+    <tr><td><strong>Concurrent relocation</strong></td><td>Compacting live objects out of
+    mostly-garbage regions into fresh ones also happens concurrently — this is the hard part, and it's
+    what colored pointers and load barriers exist to make safe (§4/§5).</td></tr>
+    <tr><td><strong>Only 2–3 brief STW pauses per cycle</strong></td><td>Just enough to snapshot GC
+    roots (thread stacks, etc.) at the start of marking and the start of relocation — their cost is
+    proportional to the <em>root set</em> (a small, roughly-constant number of references), never to
+    live-set or heap size.</td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="original">4 · How the Original ZGC Worked (JDK 11–20) — Colored Pointers &amp; Multi-Mapping</h2>
+  <p>This architecture shipped from JDK 11 through JDK 20, was deprecated once generational ZGC became
+  the default in JDK 23, and was <strong>deleted entirely in JDK 24</strong> (JEP 490) — it no longer
+  exists in the JDK you're most likely running. It's covered here because it's genuinely excellent,
+  widely-referenced design, and because generational ZGC (§5) is easiest to understand as "the same
+  problem, solved differently."</p>
+
+  <h3>4.1 · The colored pointer</h3>
+  <p>A 64-bit object reference has far more bits than any real heap needs for addressing. Per dev.java's
+  architecture deep-dive, the original ZGC reserves the top <strong>20 bits</strong> of every reference
+  for metadata, leaving <strong>44 bits</strong> for the actual object address — exactly
+  2<sup>44</sup> bytes, or <strong>16TB</strong>, the maximum heap size this scheme supports. Only 4 of
+  those 20 reserved bits were actually used (the other 16 sat in reserve for future use):</p>
+  <table class="data">
+    <tr><th>Bit</th><th>Meaning</th></tr>
+    <tr><td><code>Finalizable</code></td><td>"Indicates if the object is only reachable through a
+    finalizer" — a narrow, rarely-hit case.</td></tr>
+    <tr><td><code>Remapped</code></td><td>Indicates the pointer is known <em>not</em> to point into the
+    current relocation set — i.e. it's already up to date.</td></tr>
+    <tr><td><code>Marked0</code> / <code>Marked1</code></td><td>Indicates the object is known to be
+    marked live by the current GC cycle. ZGC alternates which of the two counts as "good" between
+    cycles, so it never needs to bulk-clear a mark bitmap.</td></tr>
+  </table>
+  <p>Layout, top bits to bottom:</p>
+  <pre><code class="bash">bits 63 .. 44 (20 bits)   bits 43 .. 0 (44 bits)
+[ unused(16) F R M1 M0 ]  [        object address        ]
+  reserved metadata          -&gt; 2^44 bytes = 16 TB max heap</code></pre>
+
+  <h3>4.2 · The load barrier — self-healing pointers</h3>
+  <p>A load barrier is a small piece of code the JIT injects at every point application code reads an
+  object reference off the heap — anywhere you write something like <code>o = obj.field</code>. At any
+  moment, ZGC has declared exactly one color "good" for the current phase (e.g. "<code>Marked0</code> is
+  good right now"). The barrier's whole job is one fast comparison:</p>
+  <pre><code class="java">if (pointerColor != currentGoodColor) {
+  // stale or unmarked -- heal it right here, on this thread
+  o = relocateAndHealPointer(o);
+}
+// o is now guaranteed valid and correctly colored</code></pre>
+  <p>If the color already matches, the thread passes through with a single cheap check and zero other
+  overhead. If it doesn't, the thread (not a GC thread) looks up the object's current address in ZGC's
+  forwarding table, patches the pointer in place, and continues — the healing cost lands only on threads
+  that actually touch a stale reference, never as a global pause.</p>
+
+  <h3>4.3 · Multi-mapping — teaching ordinary hardware to tolerate colored bits</h3>
+  <p>Colored bits baked into an address would make plain hardware dereference garbage — the CPU doesn't
+  know to strip them, and stripping them in software on every access would be far too slow. ZGC's
+  original fix, per dev.java: <strong>"the physical location of an object is mapped to three views in
+  virtual memory, corresponding to each of the pointer's potential 'colors'"</strong> — a
+  <code>Marked0</code> view, a <code>Marked1</code> view, and a <code>Remapped</code> view, all backed
+  by the exact same physical RAM via the OS's <code>mmap</code> (or the macOS/Windows equivalents added
+  by JEP 364/365). Whichever view a pointer's color bits happen to route it through, it lands on the
+  same physical page — nothing needs cleaning up in software, and the "masking" problem disappears
+  because the hardware was never shown a raw, un-mapped colored address in the first place.</p>
+  <div class="tip">This mechanism is why the original ZGC needed a huge <em>virtual</em> address-space
+  reservation regardless of how much heap was actually used — three views of up to 16TB each. It's also
+  the direct cause of the memory-reporting confusion covered in §6.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="generational">5 · Generational ZGC (JDK 21+) — What Changed, and What You Run Today</h2>
+  <p><strong>JEP 439</strong> rebuilt large parts of ZGC around one long-standing GC observation — the
+  "weak generational hypothesis": most objects die young. Splitting the heap into young and old
+  generations lets ZGC collect just the young generation, far more often and far more cheaply, without
+  ever touching the (usually much larger) old generation. Doing that safely needed two real
+  architectural changes, both confirmed by fetching JEP 439 directly:</p>
+
+  <h3>5.1 · The bit layout flipped</h3>
+  <div class="warn"><strong>This directly contradicts the original layout in §4.1 — verified by fetching
+  JEP 439's own text:</strong> <em>"The colored pointer layout used by Generational ZGC puts the
+  metadata in the low-order bits of the pointer and the object address in the high-order bits."</em>
+  Metadata moved from the top of the pointer to the bottom; the object address moved from the bottom to
+  the top. If you've read an explainer describing colored bits as living in the high-order bits of the
+  pointer, it's describing the pre-JDK-21 design from §4, not what <code>-XX:+UseZGC</code> gives you on
+  JDK 21 and later.</div>
+
+  <h3>5.2 · Multi-mapping is gone — replaced by explicit barrier code</h3>
+  <p>Per the JEP: <em>"Non-generational ZGC uses multi-mapped memory to reduce the overhead of load
+  barriers. Generational ZGC instead uses explicit code in the load and store barriers."</em> Instead of
+  routing a stale pointer through a second virtual-memory view to land on the right physical page, the
+  barrier itself now contains the logic to detect and fix a bad pointer directly — no OS-level
+  multi-mapping trick, and (per the JEP) one deliberate side benefit: <em>"it makes it easier to measure
+  the amount of memory used for the heap"</em> — a direct fix for the RSS confusion covered next in §6.</p>
+
+  <h3>5.3 · The new problem: cross-generation pointers, and the store barrier</h3>
+  <p>To collect only the young generation safely, ZGC needs to know which old-generation objects hold
+  references into it — otherwise every young collection would have to scan the entire old generation
+  just to find its roots, defeating the entire point. The fix is a second barrier that runs on
+  <em>writes</em>, not reads:</p>
+  <table class="data">
+    <tr><th></th><th>Load barrier</th><th>Store barrier</th></tr>
+    <tr><td>Runs on</td><td>a read — <code>x = obj.field</code></td><td>a write — <code>obj.field =
+    y</code></td></tr>
+    <tr><td>Job</td><td>Self-heals a moved or stale pointer the instant it's touched</td><td>Notices when
+    an old-generation object starts pointing at a young one</td></tr>
+    <tr><td>Cost profile</td><td>Runs constantly — one cheap color-bit comparison</td><td>Runs on writes
+    only — keeps young-only collections fast by avoiding an old-generation scan</td></tr>
+  </table>
+  <p>Per JEP 439, verbatim: <em>"Store barriers add entries to the remembered set. Whenever a reference
+  is stored into an object field, it is considered to potentially contain an old-to-young generation
+  pointer."</em> The remembered set itself is implemented as double-buffered bitmaps — the JEP again:
+  <em>"Each old-generation region has a pair of remembered-set bitmaps. One of the bitmaps is active and
+  populated by application threads."</em> Come collection time, a young-only cycle only has to consult
+  those small per-region bitmaps, never the whole old generation.</p>
+
+  <h3>5.4 · Both barriers, on one ordinary method</h3>
+  <p>An everyday method that writes a field and reads it straight back exercises both barriers in
+  sequence:</p>
+  <pre><code class="java">public void updateAndPrintProfile(User user, Profile newProfile) {
+  user.profile = newProfile;                 // WRITE -&gt; store barrier
+  Profile activeProfile = user.profile;       // READ  -&gt; load barrier
+  System.out.println(activeProfile.getDetails());
+}</code></pre>
+  <p>Conceptually, what the JIT has woven in around it:</p>
+  <pre><code class="java">// ---- the write: store barrier ----
+if (isOldGeneration(user) &amp;&amp; isYoungGeneration(newProfile)) {
+  addToRememberedSet(user);   // record this old-&gt;young link
+}
+user.profile = newProfile;
+
+// ---- the read: load barrier ----
+if (hasBadColor(user.profile)) {
+  user.profile = relocateAndHealPointer(user.profile);   // stale, heal on the fly
+}
+Profile activeProfile = user.profile;
+System.out.println(activeProfile.getDetails());</code></pre>
+  <div class="note">Every single field write and field read in a generational-ZGC-collected program
+  passes through one of these two barriers. That they're each just one cheap comparison in the common
+  case is exactly why ZGC's steady-state throughput overhead, while real (§10), is small enough to be
+  practical for general server workloads.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="rss-myth">6 · The "Tripled Memory" Illusion — Real History, Verified Fixed</h2>
+  <p>A well-known ZGC gotcha: because the original architecture (§4.3) mapped every live object into
+  three separate virtual-memory views, naive memory-reporting tools that summed up mapped regions could
+  report a process using far more memory than it actually held. This was real and is exactly why JEP 439
+  lists "easier to measure heap memory" as a deliberate benefit of dropping multi-mapping.</p>
+  <p>I verified this is actually fixed on generational ZGC — ran a program holding ~300MB of genuinely
+  live heap under <code>-XX:+UseZGC -Xmx1g -Xms1g</code> on this JDK 25 (macOS) install:</p>
+  <pre><code class="bash">$ ps -o pid,rss,vsz -p &lt;pid&gt;
+  PID    RSS      VSZ
+92035 340160 454905456        # RSS ~332MB -- matches real usage, NOT tripled to ~900MB
+
+$ vmmap &lt;pid&gt; | grep "Physical footprint"
+Physical footprint:         309.9M   # also tracks real usage directly</code></pre>
+  <div class="warn"><strong>Verified real finding:</strong> RSS and physical footprint both track actual
+  memory use accurately on generational ZGC. Only <strong>VSZ</strong> (virtual size) is enormous — in
+  this same run it was ~434GB for a 1GB max heap — because ZGC still reserves a huge <em>virtual</em>
+  address range up front (see the 16x ratio in §9). That's expected and harmless: virtual address space
+  costs nothing until it's actually backed by physical pages. The "tripled RSS" problem was real for
+  pre-JDK-21 ZGC's multi-mapping; it does not reproduce on the generational architecture every JDK 25/26
+  install actually runs.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="gclog">7 · Reading a Real ZGC Log, Phase by Phase</h2>
+  <p>The default one-line-per-cycle view already shows the generation split — "Minor" for young-only
+  cycles, "Major" for cycles that also touch the old generation:</p>
+  <pre><code class="bash">$ java -XX:+UseZGC -Xlog:gc -Xmx256m -cp . ZTest</code></pre>
+  <div class="warn"><strong>Verified real output</strong> — captured on this JDK 25 install, no flags
+  beyond <code>-XX:+UseZGC</code>:
+  <pre><code class="java">[0.004s][info][gc] Using The Z Garbage Collector
+[0.020s][info][gc] GC(0) Major Collection (Warmup)
+[0.023s][info][gc] GC(0) Major Collection (Warmup) 26M(10%)-&gt;58M(23%) 0.004s
+[0.032s][info][gc] GC(3) Minor Collection (Allocation Rate)
+[0.034s][info][gc] GC(3) Minor Collection (Allocation Rate) 156M(61%)-&gt;178M(70%) 0.002s
+[0.036s][info][gc] GC(6) Minor Collection (Allocation Rate) 194M(76%)-&gt;142M(55%) 0.000s</code></pre></div>
+  <p>The first few cycles are always "Warmup" Major collections — ZGC hasn't gathered enough allocation
+  statistics yet to know it can safely skip the old generation. Once it has data, cycles are triggered
+  either by <strong>Allocation Rate</strong> (the normal, adaptive trigger) or by a fixed
+  <code>-XX:ZCollectionInterval</code> if one is set (§9).</p>
+  <p>Adding <code>gc,phases</code> to the log selector reveals the individual pauses inside one cycle —
+  this is the direct proof that ZGC's stop-the-world work is tiny and constant, not proportional to
+  anything:</p>
+  <pre><code class="bash">$ java -XX:+UseZGC -Xlog:gc,gc+phases -Xmx6g -cp . GcBench2</code></pre>
+  <div class="warn"><strong>Verified real output</strong> — every "Pause" line is the STW work; every
+  "Concurrent" line runs alongside the application with no pause at all:
+  <pre><code class="java">GC(0) Y: Pause Mark Start (Major) 0.007ms
+GC(0) Y: Concurrent Mark 0.389ms
+GC(0) Y: Pause Mark End 0.005ms
+GC(0) Y: Concurrent Reset Relocation Set 0.000ms
+GC(0) Y: Concurrent Select Relocation Set 0.049ms
+GC(0) Y: Pause Relocate Start 0.002ms
+GC(0) Y: Concurrent Relocate 0.023ms
+GC(0) O: Concurrent Mark 0.048ms
+GC(0) O: Pause Mark End 0.003ms
+GC(0) O: Concurrent Process Non-Strong 0.095ms
+GC(0) O: Concurrent Remap Roots 0.051ms
+GC(0) O: Pause Relocate Start 0.001ms
+GC(0) O: Concurrent Relocate 0.013ms</code></pre></div>
+  <p>Exactly three pause kinds exist, per generation, per cycle — <code>Pause Mark Start</code>,
+  <code>Pause Mark End</code>, and <code>Pause Relocate Start</code> — and every single one above is
+  under 0.01ms. Everything with real work to do (walking the heap, relocating objects, remapping roots)
+  runs as "Concurrent" — alongside the application, never blocking it.</p>
+  <p><code>gc+init</code> shows the region sizing and worker-thread ergonomics chosen for a given heap —
+  verified at two different <code>-Xmx</code> values on this machine (15 logical CPUs):</p>
+  <table class="data">
+    <tr><th>Setting</th><th><code>-Xmx256m</code></th><th><code>-Xmx6g</code></th></tr>
+    <tr><td>Page Size Medium</td><td>Range [2M, 8M]</td><td>Range [4M, 32M]</td></tr>
+    <tr><td>Reserved Space Size</td><td>4G (16x the max heap)</td><td>96G (16x the max heap)</td></tr>
+    <tr><td>GC Workers (Young/Old)</td><td>2 (dynamic)</td><td>4 (dynamic)</td></tr>
+    <tr><td><code>ConcGCThreads</code> / <code>ParallelGCThreads</code></td><td>—</td><td>4 / 9
+    (ergonomic, from <code>-XX:+PrintFlagsFinal</code>)</td></tr>
+  </table>
+  <div class="note">The reserved virtual address space is consistently <strong>16× the configured max
+  heap</strong> on both runs — real, reproducible headroom ZGC sets aside up front so it never has to
+  fight the OS for address space mid-run. This is virtual, not physical, memory (§6).</div>
+
+  <!-- ============================================================ -->
+  <h2 id="benchmark">8 · Verified Benchmark — ZGC vs G1, Identical Workload</h2>
+  <p>Same program, same JVM, same machine, same <code>-Xmx6g</code> — a ~3GB live set held in memory
+  while ~10GB of garbage churns through it, deliberately large enough to make a copying collector's
+  per-pause cost visible:</p>
+  <pre><code class="java">List&lt;byte[]&gt; live = new ArrayList&lt;&gt;();
+for (int i = 0; i &lt; 3000; i++) live.add(new byte[1_000_000]);   // ~3GB live set
+
+Random r = new Random(42);
+for (int i = 0; i &lt; 20000; i++) {
+  byte[] junk = new byte[500_000];                              // ~10GB total churn
+  if (r.nextInt(500) == 0) live.set(r.nextInt(live.size()), new byte[1_000_000]);
+}</code></pre>
+  <pre><code class="bash">$ java -XX:+UseG1GC -Xmx6g -Xlog:gc -cp . GcBench2
+$ java -XX:+UseZGC  -Xmx6g -Xlog:gc,gc+phases -cp . GcBench2</code></pre>
+  <div class="warn"><strong>Verified real output — worst single pause of the run, each collector, same
+  workload:</strong>
+  <pre><code class="java">G1:  GC(15) Pause Remark                          3157M-&gt;3157M(5116M)   0.771ms
+G1:  GC(20) Pause Remark                          3330M-&gt;3330M(5120M)   0.347ms
+G1:  GC(23) Pause Young (Prepare Mixed)(Evac.)     5043M-&gt;3087M(5400M)   4.961ms
+G1:  worst pause across the whole run:                                 37.350ms
+
+ZGC: GC(1) Y: Pause Mark Start (Major)                                  0.009ms
+ZGC: worst individual STW pause across the whole run:                   0.009ms</code></pre></div>
+  <p>On identical work, G1's worst pause was <strong>37.35ms</strong>; ZGC's worst pause was
+  <strong>0.009ms</strong> — roughly a <strong>4,000×</strong> difference. That gap is the entire reason
+  ZGC exists. It isn't free, though: in this same run ZGC finished its total work in somewhat more
+  wall-clock time than G1 did (concurrent marking/relocation and constant barrier checks cost real CPU
+  and throughput — see §10 for the honest trade-off framing dev.java itself uses).</p>
+
+  <!-- ============================================================ -->
+  <h2 id="tuning">9 · Tuning Flags Reference</h2>
+  <p>From Oracle's GC Tuning Guide, cross-checked against this JDK 25 install's own
+  <code>-XX:+PrintFlagsFinal</code> defaults:</p>
+  <table class="data">
+    <tr><th>Flag</th><th>Default (verified)</th><th>What it does</th></tr>
+    <tr><td><code>-Xmx</code></td><td>—</td><td>Oracle's own framing: "the main tuning knob" — size it so
+    the heap fits the live set plus headroom for allocation while GC runs. Oracle states ZGC's supported
+    range as "a few hundred megabytes to 16TB."</td></tr>
+    <tr><td><code>-XX:SoftMaxHeapSize</code></td><td>= <code>-Xmx</code></td><td>A soft cap ZGC's
+    heuristics target; the heap can still grow past it to <code>-Xmx</code> under real pressure. Oracle's
+    example: <code>-Xmx5g -XX:SoftMaxHeapSize=4g</code>.</td></tr>
+    <tr><td><code>-XX:ZCollectionInterval</code></td><td><code>0</code> (disabled)</td><td>Force a GC
+    cycle at least every N seconds, instead of relying purely on the adaptive allocation-rate
+    trigger.</td></tr>
+    <tr><td><code>-XX:ZAllocationSpikeTolerance</code></td><td><code>2.0</code></td><td>How far above
+    the recent average allocation rate ZGC braces for before a cycle is considered "behind."</td></tr>
+    <tr><td><code>-XX:ZFragmentationLimit</code></td><td><code>5.0</code></td><td>Percentage of
+    heap fragmentation ZGC tolerates before prioritizing compaction over raw throughput.</td></tr>
+    <tr><td><code>-XX:+ZProactive</code></td><td><code>true</code></td><td>Lets ZGC start a cycle
+    proactively based on heap growth trends, not just when a trigger fires.</td></tr>
+    <tr><td><code>-XX:+ZUncommit</code> / <code>-XX:ZUncommitDelay</code></td><td><code>true</code> /
+    <code>300</code>s</td><td>Returns unused heap memory to the OS after it's been idle for the delay —
+    lets a bursty process actually shrink its footprint between spikes.</td></tr>
+    <tr><td><code>-XX:ZYoungCompactionLimit</code></td><td><code>25.0</code></td><td>Percentage of the
+    young generation ZGC will compact in a single young collection.</td></tr>
+    <tr><td><code>-XX:ConcGCThreads</code> / <code>-XX:ParallelGCThreads</code></td><td>ergonomic (4 / 9
+    on this 15-CPU machine)</td><td>Threads dedicated to concurrent GC work vs. the larger pool used only
+    during STW pauses.</td></tr>
+  </table>
+  <div class="tip">Oracle's own current text on the tuning-guide page states it plainly:
+  <em>"As of JDK 24, ZGC is a generational garbage collector and the ZGenerational option has been
+  removed."</em> — don't spend time hunting for that flag on a current JDK; it doesn't exist anymore
+  (verified in §2).</div>
+
+  <!-- ============================================================ -->
+  <h2 id="whentouse">10 · When to Reach for ZGC (and When Not To)</h2>
+  <p>dev.java's own overview page is refreshingly direct about this, and it's worth quoting exactly:
+  ZGC <em>"was not designed... to be a general upgrade"</em> over G1, Parallel, or Serial. It trades some
+  CPU and memory overhead — the constant load/store barrier checks, plus the concurrent marking/
+  relocation threads competing for cores — for pause times that stay flat regardless of heap size.</p>
+  <table class="data">
+    <tr><th>Good fit</th><th>Why</th></tr>
+    <tr><td>Large heaps (tens of GB and up)</td><td>Verified in §8: ZGC's pause doesn't grow with heap or
+    live-set size; G1's does.</td></tr>
+    <tr><td>Latency-sensitive services (trading, real-time bidding, gaming backends)</td><td>Sub-
+    millisecond worst-case pauses matter more than squeezing out maximum throughput.</td></tr>
+    <tr><td>Systems with plenty of spare CPU cores</td><td>Concurrent marking/relocation needs cores to
+    run on without stealing them from the application.</td></tr>
+    <tr><th>Poor fit</th><th>Why</th></tr>
+    <tr><td>Single-core or CPU-constrained systems</td><td>dev.java's own guidance: ZGC "is not
+    recommended... on systems with a single or very limited number of CPUs" — there's no spare core for
+    concurrent work to hide on.</td></tr>
+    <tr><td>Small heaps, short-lived CLI tools, batch jobs</td><td>The fixed overhead (barrier checks,
+    large virtual-memory reservation, warmup cycles) isn't worth paying when nobody's waiting on a pause
+    anyway — Serial or Parallel wins here (see the <a href="#pg-topics-jvm-memory-gc-html">JVM Memory &amp; GC deep
+    dive</a>).</td></tr>
+    <tr><td>Pure throughput-maximizing batch/ETL workloads</td><td>Parallel GC's simpler, fully-STW
+    design generally gets more total work done per CPU-hour when nobody cares about individual pause
+    length.</td></tr>
+  </table>
+  <p>For what generational ZGC specifically improved over the old single-generation design, Oracle Java
+  Developer Advocate Billy Korando's own numbers (published alongside the JEP 439 rollout) are concrete:
+  roughly a <strong>10% throughput improvement</strong> over single-generation ZGC on a JDK 17 baseline,
+  an average per-request latency regression of only <strong>2–3 microseconds</strong>, and P99 pause
+  improving by <strong>10–20%</strong> in their benchmark, remaining stable up to 275 concurrent
+  clients.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="platforms">11 · Platform Support Timeline</h2>
+  <table class="data">
+    <tr><th>JDK</th><th>Platform status</th></tr>
+    <tr><td>11</td><td>Linux/x64 only (JEP 333 explicitly scoped it that way).</td></tr>
+    <tr><td>14</td><td>macOS added, experimental (JEP 364); Windows added, experimental (JEP 365, needs
+    Windows build ≥ 1803).</td></tr>
+    <tr><td>15</td><td>All of Linux/x86_64, Linux/aarch64, Windows, and macOS reach production status
+    together (JEP 377).</td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="comparison">12 · ZGC vs G1 vs Shenandoah</h2>
+  <p>G1 and ZGC are both shipped by every OpenJDK build (Oracle-led). Shenandoah — included here because
+  it's the collector most often compared to ZGC — is Red Hat's low-pause collector, built independently
+  with a different mechanism; it's general Java-ecosystem knowledge rather than something Oracle/dev.java
+  documents, so it's flagged as such below.</p>
+  <table class="data">
+    <tr><th></th><th>G1 (default)</th><th>ZGC</th><th>Shenandoah <em>(Red Hat, general knowledge)</em></th></tr>
+    <tr><td>Pause scaling</td><td>Grows somewhat with live-set size at large heaps</td><td>Flat —
+    verified in §8</td><td>Also targets flat pauses</td></tr>
+    <tr><td>Core mechanism</td><td>Region-based STW evacuation, concurrent marking</td><td>Colored
+    pointers + load/store barriers (§4/§5)</td><td>Brooks forwarding pointers in the object header + load
+    reference barriers, not colored pointers</td></tr>
+    <tr><td>Metadata location</td><td>Card tables, remembered sets</td><td>Bits inside the reference
+    itself</td><td>An extra forwarding-pointer word in the object header</td></tr>
+    <tr><td>Generational</td><td>Always (young + old, the original design)</td><td>Yes, since JDK 21,
+    default since 23, only mode since 24</td><td>Final in JDK 25</td></tr>
+    <tr><td>Best fit</td><td>General-purpose default — good balance, minimal tuning</td><td>Very large
+    heaps, hardest latency requirements, spare CPU available</td><td>Similar niche to ZGC, different
+    vendor/implementation</td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="cheat">13 · Cheat Sheet</h2>
+  <div class="cheat">
+    <h3>ZGC in one glance</h3>
+    <ul>
+      <li><strong>What it is:</strong> a concurrent, region-based, compacting collector whose stop-the-
+      world pauses stay flat regardless of heap or live-set size — verified <strong>0.009ms</strong>
+      worst pause vs G1's <strong>37.35ms</strong> on an identical 6GB-heap workload (§8).</li>
+      <li><strong>History:</strong> JEP 333 (Java 11, experimental, Linux-only) → JEP 364/365 (Java 14,
+      macOS/Windows) → JEP 377 (Java 15, production everywhere) → JEP 439 (Java 21, generational, opt-in)
+      → JEP 474 (Java 23, generational by default) → JEP 490 (Java 24, non-generational mode deleted —
+      <code>-XX:+UseZGC</code> now always means generational).</li>
+      <li><strong>Two different architectures answer to the same flag:</strong> pre-JDK-21 used
+      high-order metadata bits + three-way multi-mapped virtual memory (§4); JDK 21+ flips metadata to
+      the <em>low</em>-order bits, drops multi-mapping, and adds a store barrier + remembered sets for
+      generations (§5). Content describing colored bits as "high-order" is describing the old,
+      now-deleted design.</li>
+      <li><strong>The "tripled RSS" gotcha was real, and is fixed:</strong> verified generational ZGC's
+      RSS/physical-footprint tracks actual usage accurately; only virtual size (VSZ) balloons, by a
+      verified constant ~16× the configured <code>-Xmx</code> (§6, §7).</li>
+      <li><strong>Enable it:</strong> <code>-XX:+UseZGC</code> — no other flag needed on JDK 24+.</li>
+      <li><strong>Watch it:</strong> <code>-Xlog:gc</code> (Minor/Major, one line per cycle) or
+      <code>-Xlog:gc,gc+phases</code> (every individual Pause/Concurrent sub-phase, §7).</li>
+      <li><strong>Not a free upgrade:</strong> per dev.java, "not designed to be a general upgrade" —
+      skip it on single-core boxes or tiny short-lived processes; reach for it on large heaps with
+      latency requirements and spare CPU (§10).</li>
+      <li><strong>See also:</strong> the broader <a href="#pg-topics-jvm-memory-gc-html">JVM Memory Model &amp;
+      GC</a> deep dive for how ZGC fits alongside Serial, Parallel, G1, and Shenandoah.</li>
+    </ul>
+  </div>
+
 </section>
 <section id="pg-topics-aot-cache-html" class="print-page">
   <p class="sec-tag">Deep dive · JVM internals · complete guide</p>

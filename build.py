@@ -25,6 +25,7 @@ PAGES = [
     "topics/modules-jpms.html", "topics/stream-api.html", "topics/virtual-threads.html",
     "topics/structured-concurrency.html", "topics/scoped-values.html",
     "topics/streams-gatherers.html", "topics/ffm-api.html", "topics/jvm-memory-gc.html",
+    "topics/zgc.html",
     "topics/aot-cache.html", "topics/jshell.html", "topics/jlink-jpackage.html",
     "topics/jfr.html", "topics/jmx.html", "topics/jwebserver.html",
     "topics/java-agent.html",
