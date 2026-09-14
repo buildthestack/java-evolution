@@ -157,6 +157,7 @@
     <label for="version-select">Java Version</label>
     <select id="version-select">
       <option value="">— pick a version —</option>
+      <option value="random">🎲 Random mix — all versions (20 questions)</option>
       <option value="25">Java 25 · LTS  (20 questions)</option>
       <option value="21">Java 21 · LTS  (25 questions)</option>
       <option value="17">Java 17 · LTS  (25 questions)</option>
@@ -1292,34 +1293,71 @@ const progressWrap = document.getElementById('progress-wrap');
 const progressFill = document.getElementById('progress-fill');
 const versionSel = document.getElementById('version-select');
 
-let state = {};   // { qIdx: { selected: N|null, revealed: bool } }
+let state = {};       // { qIdx: { selected: N|null, revealed: bool } }
 let currentVersion = null;
+let currentPool = []; // the active question list (version or random)
+
+// Fisher-Yates shuffle
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildRandomPool(n) {
+  // Collect every question from every version, tag it with its version
+  const all = [];
+  Object.entries(QUESTIONS).forEach(([ver, qs]) => {
+    qs.forEach(q => all.push(Object.assign({}, q, { _ver: 'Java ' + ver })));
+  });
+  const picked = shuffle(all).slice(0, n);
+  // Also shuffle each question's options (so the correct position changes)
+  // but keep track of the new correct index
+  return picked.map(q => {
+    const origA = q.a;
+    const indices = shuffle([0, 1, 2, 3]);
+    const newOpts = indices.map(i => q.opts[i]);
+    const newA = indices.indexOf(origA);
+    return Object.assign({}, q, { opts: newOpts, a: newA });
+  });
+}
 
 function loadVersion(v) {
   currentVersion = v;
   state = {};
-  const qs = QUESTIONS[v];
-  if (!qs) {
-    container.innerHTML = '<div id="quiz-empty"><span class="big-icon">🚧</span>Questions for Java ' + v + ' are coming soon.</div>';
-    progressWrap.style.display = 'none';
-    resetBtn.style.display = 'none';
-    scorePill.textContent = '—';
-    scorePill.className = 'score-pill';
-    return;
+
+  if (v === 'random') {
+    currentPool = buildRandomPool(20);
+  } else {
+    const qs = QUESTIONS[v];
+    if (!qs) {
+      container.innerHTML = '<div id="quiz-empty"><span class="big-icon">🚧</span>Questions for Java ' + v + ' are coming soon.</div>';
+      progressWrap.style.display = 'none';
+      resetBtn.style.display = 'none';
+      scorePill.textContent = '—';
+      scorePill.className = 'score-pill';
+      return;
+    }
+    currentPool = qs;
   }
-  qs.forEach((_, i) => { state[i] = { selected: null, revealed: false }; });
+
+  currentPool.forEach((_, i) => { state[i] = { selected: null, revealed: false }; });
   progressWrap.style.display = 'block';
   resetBtn.style.display = 'inline-block';
-  renderAll(qs);
+  renderAll(currentPool);
   updateScore();
 }
 
 function renderAll(qs) {
   container.innerHTML = '';
-  qs.forEach((q, i) => renderCard(q, i));
+  qs.forEach((q, i) => renderCard(q, i, qs.length));
 }
 
-function renderCard(q, i) {
+function renderCard(q, i, total) {
+  total = total || currentPool.length;
   const s = state[i];
   const letters = ['A', 'B', 'C', 'D'];
 
@@ -1329,8 +1367,10 @@ function renderCard(q, i) {
 
   const meta = document.createElement('div');
   meta.className = 'q-meta';
-  meta.innerHTML = '<span class="q-num">Q' + (i+1) + ' / ' + QUESTIONS[currentVersion].length + '</span>'
-                 + '<span class="q-tag">' + escH(q.tag) + '</span>';
+  // In random mode, also show which Java version this question came from
+  const verLabel = (currentVersion === 'random' && q._ver) ? ' · ' + escH(q._ver) : '';
+  meta.innerHTML = '<span class="q-num">Q' + (i+1) + ' / ' + total + '</span>'
+                 + '<span class="q-tag">' + escH(q.tag) + verLabel + '</span>';
   card.appendChild(meta);
 
   const qtext = document.createElement('div');
@@ -1404,7 +1444,7 @@ function selectOption(qi, oi) {
 }
 
 function revealAnswer(qi) {
-  const q = QUESTIONS[currentVersion][qi];
+  const q = currentPool[qi];
   const s = state[qi];
   s.revealed = true;
 
@@ -1439,14 +1479,13 @@ function revealAnswer(qi) {
 }
 
 function updateScore() {
-  const qs = QUESTIONS[currentVersion];
-  if (!qs) return;
-  const revealed = Object.values(state).filter(s => s.revealed);
-  const correct  = revealed.filter((s, i) => s.selected === qs[i] && s.selected === qs[i]?.a);
-  // recalculate properly
+  if (!currentPool.length) return;
   let rev = 0, cor = 0;
-  qs.forEach((q, i) => {
-    if (state[i].revealed) { rev++; if (state[i].selected === q.a) cor++; }
+  currentPool.forEach((q, i) => {
+    if (state[i] && state[i].revealed) {
+      rev++;
+      if (state[i].selected === q.a) cor++;
+    }
   });
 
   if (rev === 0) {
@@ -1457,11 +1496,12 @@ function updateScore() {
     scorePill.className = 'score-pill has-score';
   }
 
-  const pct = (rev / qs.length) * 100;
+  const pct = (rev / currentPool.length) * 100;
   progressFill.style.width = pct + '%';
 }
 
 resetBtn.addEventListener('click', () => {
+  // Random mode: re-roll a fresh set. Other modes: same question order.
   if (currentVersion) loadVersion(currentVersion);
 });
 
