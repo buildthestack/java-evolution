@@ -65,6 +65,7 @@
     ]},
     { title: "Interview prep", items: [
       { href: "interview/index.html",               label: "Overview" },
+      { href: "interview/quiz.html",                label: "MCQ Quiz (by version)" },
       { href: "interview/core-java.html",           label: "Core Java Q&A" },
       { href: "interview/advanced-java.html",       label: "Advanced Java Q&A" }
     ]}

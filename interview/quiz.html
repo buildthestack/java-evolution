@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Java MCQ Quiz — Java Evolution</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    /* ---- Quiz shell ---- */
+    .quiz-controls {
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+      background: var(--bg-alt); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 20px; margin: 24px 0 28px;
+    }
+    .quiz-controls label { font-weight: 600; color: var(--text-soft); font-size: .9rem; white-space: nowrap; }
+    #version-select {
+      padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); font-size: 1rem;
+      font-family: inherit; cursor: pointer; min-width: 200px;
+    }
+    .quiz-score {
+      margin-left: auto; display: flex; align-items: center; gap: 10px;
+      font-size: .95rem; color: var(--text-soft);
+    }
+    .score-pill {
+      background: var(--badge-bg); color: var(--text); font-weight: 700;
+      padding: 4px 14px; border-radius: 20px; font-size: .9rem; min-width: 60px;
+      text-align: center; border: 1px solid var(--border);
+    }
+    .score-pill.has-score { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+    #reset-btn {
+      padding: 7px 16px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text-soft); cursor: pointer; font-family: inherit;
+      font-size: .88rem;
+    }
+    #reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ---- Question card ---- */
+    .q-card {
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 22px 24px; margin-bottom: 20px; background: var(--bg);
+      transition: border-color .15s;
+    }
+    .q-card.answered { border-color: var(--border); }
+    .q-card.correct-card { border-color: var(--lts-bg); }
+    .q-card.wrong-card  { border-color: var(--accent); }
+
+    .q-meta {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+    }
+    .q-num {
+      background: var(--badge-bg); color: var(--text-soft); font-size: .78rem;
+      font-weight: 700; padding: 2px 10px; border-radius: 20px; letter-spacing: .04em;
+    }
+    .q-tag {
+      font-size: .78rem; color: var(--text-soft); background: var(--bg-alt);
+      padding: 2px 9px; border-radius: 20px; border: 1px solid var(--border);
+    }
+    .q-text {
+      font-size: 1.02rem; font-weight: 600; line-height: 1.5;
+      margin-bottom: 16px; color: var(--text);
+    }
+    .q-code {
+      font-family: monospace; font-size: .88rem; background: var(--bg-code);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px 14px; margin: 10px 0 16px; display: block;
+      white-space: pre; overflow-x: auto; color: var(--text);
+    }
+
+    /* ---- Options ---- */
+    .q-opts { display: flex; flex-direction: column; gap: 9px; margin-bottom: 16px; }
+    .q-opt {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 11px 16px; border-radius: 8px; border: 1px solid var(--border);
+      cursor: pointer; background: var(--bg); font-family: inherit;
+      font-size: .95rem; color: var(--text); text-align: left;
+      transition: border-color .12s, background .12s; line-height: 1.5;
+      width: 100%;
+    }
+    .q-opt:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+    .q-opt .opt-letter {
+      font-weight: 700; color: var(--text-soft); min-width: 20px; flex-shrink: 0;
+    }
+    .q-opt.selected { border-color: var(--preview-bg); background: var(--bg-alt); }
+    .q-opt.selected .opt-letter { color: var(--preview-bg); }
+    .q-opt.reveal-correct { border-color: var(--lts-bg) !important; background: rgba(26,127,55,.08) !important; }
+    .q-opt.reveal-correct .opt-letter { color: var(--lts-bg) !important; }
+    .q-opt.reveal-wrong { border-color: var(--accent) !important; background: var(--accent-soft) !important; }
+    .q-opt.reveal-wrong .opt-letter { color: var(--accent) !important; }
+    .q-opt:disabled { cursor: default; }
+
+    /* ---- Show answer row ---- */
+    .q-actions { display: flex; align-items: center; gap: 12px; }
+    .show-btn {
+      padding: 8px 20px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text-soft); font-family: inherit;
+      font-size: .9rem; cursor: pointer; transition: all .12s;
+    }
+    .show-btn:hover { border-color: var(--preview-bg); color: var(--preview-bg); }
+    .show-btn.revealed { border-color: var(--lts-bg); color: var(--lts-bg); }
+    .q-result-badge {
+      font-size: .82rem; font-weight: 700; padding: 3px 11px;
+      border-radius: 20px; display: none;
+    }
+    .q-result-badge.correct { background: rgba(26,127,55,.12); color: var(--lts-bg); border: 1px solid var(--lts-bg); }
+    .q-result-badge.wrong   { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
+
+    /* ---- Answer detail ---- */
+    .answer-block {
+      display: none; margin-top: 16px; padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .answer-block.visible { display: block; }
+    .correct-line {
+      font-weight: 700; font-size: .95rem; color: var(--lts-bg);
+      margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+    }
+    .correct-line::before { content: "✓"; font-size: 1rem; }
+    .answer-block p {
+      margin: 0; font-size: .93rem; color: var(--text-soft);
+      line-height: 1.65; padding: 0;
+    }
+    .answer-block code {
+      font-family: monospace; font-size: .85rem; background: var(--bg-code);
+      padding: 1px 5px; border-radius: 4px; color: var(--text);
+    }
+
+    /* ---- Empty state ---- */
+    #quiz-empty {
+      text-align: center; padding: 60px 20px; color: var(--text-soft);
+    }
+    #quiz-empty .big-icon { font-size: 3rem; display: block; margin-bottom: 12px; }
+
+    /* ---- Progress bar ---- */
+    .progress-bar-wrap {
+      background: var(--badge-bg); border-radius: 6px; height: 6px;
+      margin-bottom: 24px; overflow: hidden; display: none;
+    }
+    .progress-bar-fill {
+      height: 100%; background: var(--lts-bg); border-radius: 6px;
+      transition: width .3s ease;
+    }
+  </style>
+</head>
+<body data-root="../" data-page="interview/quiz.html" data-title="Quiz">
+<main>
+  <p class="sec-tag">Interview prep · <a href="index.html">Interview home</a></p>
+  <h1>Java MCQ Quiz</h1>
+  <p class="lead">
+    Multiple-choice questions by Java version — pick one, then hit <strong>Show Answer</strong>
+    to reveal the correct option and a full explanation.
+  </p>
+
+  <!-- Controls row -->
+  <div class="quiz-controls">
+    <label for="version-select">Java Version</label>
+    <select id="version-select">
+      <option value="">— pick a version —</option>
+      <option value="25">Java 25 · LTS  (20 questions)</option>
+      <option value="21">Java 21 · LTS  (coming soon)</option>
+      <option value="17">Java 17 · LTS  (coming soon)</option>
+      <option value="26">Java 26  (coming soon)</option>
+    </select>
+    <div class="quiz-score">
+      Score: <span class="score-pill" id="score-pill">—</span>
+      <button id="reset-btn" style="display:none">↺ Reset</button>
+    </div>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="progress-bar-wrap" id="progress-wrap">
+    <div class="progress-bar-fill" id="progress-fill"></div>
+  </div>
+
+  <!-- Question container -->
+  <div id="quiz-container">
+    <div id="quiz-empty">
+      <span class="big-icon">🎯</span>
+      Select a Java version above to start the quiz.
+    </div>
+  </div>
+</main>
+<script src="../assets/nav.js"></script>
+<script>
+// ============================================================
+// Question data
+// ============================================================
+const QUESTIONS = {
+
+  25: [
+    {
+      tag: "Language · JEP 506",
+      q: "Which JEP finalized Scoped Values in Java 25?",
+      opts: ["JEP 429", "JEP 506", "JEP 481", "JEP 487"],
+      a: 1,
+      exp: "JEP 506 finalized Scoped Values in Java 25. The feature has a long preview history: JEP 429 (Java 20, preview), JEP 446 (Java 21), JEP 464 (Java 22), JEP 481 (Java 23), JEP 487 (Java 24) — each refining the API before it became stable in Java 25. JEP 429 is just the first preview, not the final one."
+    },
+    {
+      tag: "Language · JEP 513",
+      q: "Flexible Constructor Bodies (JEP 513, final in Java 25) allows statements before super(). Which statement is still NOT permitted before the super() call?",
+      opts: [
+        "Declaring and assigning a local variable",
+        "Calling a static helper method",
+        "Reading a static field",
+        "Reading this.field or calling an instance method on this"
+      ],
+      a: 3,
+      exp: "The rule is: statements before super() must not reference the instance being created (this). Reading static fields, calling static methods, and declaring local variables are all fine. What remains forbidden is accessing the not-yet-constructed instance — reading this.field, calling this.method(), or passing this anywhere — because the object's invariants haven't been established yet by the super constructor."
+    },
+    {
+      tag: "Language · JEP 511",
+      q: "With Module Import Declarations (JEP 511, final in Java 25), what does `import module java.sql;` import into the compilation unit?",
+      opts: [
+        "Just the module descriptor (module-info.class)",
+        "All public types from every package exported by the java.sql module",
+        "Only types in the java.sql package itself",
+        "A module reference variable named java.sql"
+      ],
+      a: 1,
+      exp: "import module M; imports all public types from all packages that module M exports unconditionally. For java.sql that includes types from java.sql, javax.sql, and any other package it exports. It's a shorthand for writing many individual package imports, not just one package. It doesn't import the module descriptor or make a variable."
+    },
+    {
+      tag: "Language · JEP 512",
+      q: "In a compact source file (JEP 512, final in Java 25) that declares no explicit class, which is a valid program entry point?",
+      opts: [
+        "public static void main(String[] args)",
+        "static void main()",
+        "void main()",
+        "All of the above are valid"
+      ],
+      a: 3,
+      exp: "All three forms are valid in Java 25. The JVM tries entry points in a priority order: (1) static void main(String[]) — the traditional form, (2) static void main() — no-args static, (3) void main(String[]) — instance form, (4) void main() — simplest instance form. Using void main() is valid and is the style promoted by compact source files, but the old public static form still works and is tried first in the resolution order."
+    },
+    {
+      tag: "JVM · JEP 519",
+      q: "Compact Object Headers (JEP 519, final in Java 25) reduces the object header size from:",
+      opts: [
+        "64 bytes to 32 bytes",
+        "32 bytes to 16 bytes",
+        "16 bytes to 8 bytes",
+        "12 bytes to 8 bytes"
+      ],
+      a: 2,
+      exp: "The standard JVM object header is 16 bytes (a 64-bit mark word + a 64-bit compressed class pointer on 64-bit JVMs). JEP 519 compresses both into 8 bytes by encoding the class pointer into spare bits of the mark word, halving the per-object overhead. This directly reduces heap usage for workloads with many small objects — in the OpenJDK team's benchmarks, up to a 10–20% heap reduction."
+    },
+    {
+      tag: "APIs · JEP 510",
+      q: "What does the KDF (Key Derivation Function) API introduced by JEP 510 in Java 25 provide?",
+      opts: [
+        "A Key Distribution Framework for distributed microservices",
+        "A standard API for deriving cryptographic keys from input material, e.g. HKDF-SHA256",
+        "A kernel-level data filter for security-sensitive I/O",
+        "A replacement for javax.crypto.KeyAgreement"
+      ],
+      a: 1,
+      exp: "JEP 510 adds KDF.getInstance(\"HKDF-SHA256\") and related classes for standards-based key derivation — turning input keying material and optional salt/info into derived secret keys (e.g. an AES key). Before this, teams either hand-rolled HKDF from javax.crypto.Mac (easy to get subtly wrong) or pulled in a third-party crypto library. It is not about distribution, filtering, or KeyAgreement."
+    },
+    {
+      tag: "APIs · JEP 485",
+      q: "The Stream Gatherers API (JEP 485) defines the Gatherer interface. Which of these is NOT a method on that interface?",
+      opts: [
+        "initializer()",
+        "integrator()",
+        "combiner()",
+        "mapper()"
+      ],
+      a: 3,
+      exp: "The Gatherer interface has four methods: initializer() (optional — creates the mutable state), integrator() (required — processes each element and may emit downstream), combiner() (optional — merges two partial states for parallel streams), and finisher() (optional — emits any final elements after the last input). There is no mapper() — that concept belongs to Stream.map(Function), not Gatherers."
+    },
+    {
+      tag: "Concurrency · JEP 505",
+      q: "What is the status of Structured Concurrency in Java 25?",
+      opts: [
+        "Final — available without --enable-preview",
+        "6th preview — still requires --enable-preview",
+        "Removed — replaced by CompletableFuture enhancements",
+        "Moved to an incubator module"
+      ],
+      a: 1,
+      exp: "Structured Concurrency has been in preview since Java 21 and was in its 6th preview in Java 25 (JEP 505), still requiring --enable-preview. It has not been finalized. The API has stabilized significantly (Joiner, Configuration/withTimeout, etc.) but Oracle chose to keep it in preview while the broader ecosystem validates usage patterns. It was not removed — virtual threads and StructuredTaskScope are the intended concurrent model going forward."
+    },
+    {
+      tag: "JVM · JEP 484",
+      q: "The Class-File API (JEP 484, finalized in Java 24) is found in which package?",
+      opts: [
+        "java.lang.classfile",
+        "java.lang.reflect.classfile",
+        "jdk.classfile",
+        "java.io.bytecode"
+      ],
+      a: 0,
+      exp: "The Class-File API lives in java.lang.classfile, exported unconditionally from the java.base module. You can confirm this with: java --describe-module java.base | grep classfile. It was finalized in Java 24 (JEP 484) after preview periods in Java 22 (JEP 457) and Java 23 (JEP 466). The entry point is ClassFile.of() which returns a ClassFile instance for parsing and transforming .class files."
+    },
+    {
+      tag: "Concurrency · Virtual Threads",
+      q: "Which statement accurately describes virtual threads in Java 25?",
+      opts: [
+        "Each virtual thread has a 1:1 mapping to a dedicated OS thread",
+        "Virtual threads are mounted onto platform threads called carrier threads, sharing them cooperatively",
+        "Virtual threads can only be created via Thread.ofVirtual().start()",
+        "Virtual threads bypass the Java Memory Model and have weaker synchronization guarantees"
+      ],
+      a: 1,
+      exp: "Virtual threads are multiplexed onto a small pool of platform (OS) threads called carrier threads, managed by the JVM's ForkJoinPool. When a virtual thread blocks (e.g. on I/O), it is unmounted from its carrier thread, which can then run a different virtual thread — this is what makes millions of virtual threads practical. Creation works via Thread.ofVirtual(), Executors.newVirtualThreadPerTaskExecutor(), or plain new Thread() with the virtual flag, not just one form. The JMM applies fully to virtual threads."
+    },
+    {
+      tag: "Concurrency · JEP 506",
+      q: "ScopedValue vs ThreadLocal — which statement is TRUE in Java 25?",
+      opts: [
+        "A ScopedValue can be mutated after its initial binding within the same scope",
+        "ThreadLocal values are automatically inherited by child virtual threads",
+        "ScopedValue bindings are automatically removed when the scope exits, eliminating thread-pool leakage",
+        "ScopedValue was introduced as a final feature in Java 21"
+      ],
+      a: 2,
+      exp: "ScopedValue bindings are stack-scoped — they disappear automatically when ScopedValue.where().run() (or call()) returns, even if via exception. This eliminates the ThreadLocal pitfall where a pooled thread carries stale values into the next task. ThreadLocal values are NOT automatically inherited by virtual threads (only InheritableThreadLocal works, and even then it copies the value once at thread creation). ScopedValues are immutable within a scope — you can't reassign the same binding. JEP 429 (preview in Java 20) first introduced them; they weren't final until Java 25."
+    },
+    {
+      tag: "APIs · FFM",
+      q: "In the Foreign Function & Memory API (final since Java 22), which class is responsible for managing the lifetime of off-heap memory segments?",
+      opts: [
+        "MemoryBuffer",
+        "Arena",
+        "NativeScope",
+        "HeapSegment"
+      ],
+      a: 1,
+      exp: "Arena manages the lifetime of off-heap MemorySegments. It comes in several flavours: Arena.ofConfined() (accessible from one thread, closed on that thread), Arena.ofShared() (multi-thread accessible), Arena.ofAuto() (GC-managed), and Arena.global() (lives forever). When the Arena is closed (try-with-resources), all memory segments it owns are deallocated atomically. NativeScope was the old pre-preview name; MemoryBuffer and HeapSegment don't exist in this API."
+    },
+    {
+      tag: "Language · Pattern Matching",
+      q: "Primitive types in switch patterns — e.g. `case int i when i > 0` — what is their status in Java 25?",
+      opts: [
+        "Final since Java 21",
+        "Final since Java 25",
+        "Still in preview in Java 25",
+        "Not planned — primitives cannot be pattern-matched in switch"
+      ],
+      a: 2,
+      exp: "Primitive patterns in switch (allowing switch on int, long, float, double, etc. with pattern guards) were in preview in Java 23 (JEP 455) and Java 25 (JEP 488), not yet final. Object patterns in switch (instanceof patterns, sealed class deconstruction) have been final since Java 21, but extending that to primitive types requires separate JEP work still in the preview stage as of Java 25."
+    },
+    {
+      tag: "Language",
+      q: "Unnamed variables and patterns (`_`) were finalized (made available without --enable-preview) in:",
+      opts: [
+        "Java 21",
+        "Java 22",
+        "Java 24",
+        "Java 25"
+      ],
+      a: 1,
+      exp: "Unnamed variables and patterns (_) were finalized in Java 22 (JEP 456, 'Unnamed Variables and Patterns'). They were previewed in Java 21 (JEP 443) and Java 22 finalized them — not Java 21, not 24 or 25. The underscore was previously a compile-time warning; it is now a proper language feature meaning 'I intentionally don't use this binding.' Works in catch blocks, try-with-resources, for-each, lambda parameters, and pattern deconstruction."
+    },
+    {
+      tag: "JVM · Vector API",
+      q: "What is the status of the Vector API in Java 25?",
+      opts: [
+        "Final — available in java.lang with no extra flags",
+        "Final — in the java.base module",
+        "Still incubating — requires --add-modules jdk.incubator.vector",
+        "Removed — replaced by the SIMD intrinsics built into the JIT"
+      ],
+      a: 2,
+      exp: "The Vector API has been in the incubator since Java 16 and was in its 10th incubator round by Java 25 (JEP 508). It still requires --add-modules jdk.incubator.vector to compile and run. It hasn't been finalized because the API is waiting for Project Valhalla's value types (which would make it much more efficient) before committing to a stable API surface. It was not removed — just not yet stable."
+    },
+    {
+      tag: "GC · ZGC · JEP 490",
+      q: "ZGC's non-generational mode was completely removed (code and tests deleted) in which Java version?",
+      opts: [
+        "Java 21",
+        "Java 22",
+        "Java 23",
+        "Java 24"
+      ],
+      a: 3,
+      exp: "JEP 490 ('ZGC: Remove the Non-Generational Mode') targeted Java 24. Non-generational ZGC was deprecated in Java 23 (JEP 474 also made generational ZGC the default). In Java 24, all non-generational code was deleted. As of Java 25, -XX:+UseZGC always means generational ZGC, and the -XX:+ZGenerational flag is a no-op (verified: JVM prints 'Ignoring option ZGenerational; support was removed in 24.0')."
+    },
+    {
+      tag: "GC · G1",
+      q: "Which Java version made G1 the default garbage collector, and what JEP covered it?",
+      opts: [
+        "Java 8 — JEP 173",
+        "Java 9 — JEP 248",
+        "Java 11 — JEP 318",
+        "Java 17 — JEP 391"
+      ],
+      a: 1,
+      exp: "JEP 248 ('Make G1 the Default Garbage Collector') targeted Java 9, replacing Parallel GC as the server default. The JEP's own motivation: 'Limiting GC pause times is, in general, more important than maximizing throughput.' G1 was already available as a non-experimental collector from Java 7, and concurrent class unloading added in Java 8u40 made it production-ready for the Java 9 default promotion."
+    },
+    {
+      tag: "APIs · Collections",
+      q: "SequencedCollection (added in Java 21) provides first/last access. Which method is on SequencedCollection but NOT on the plain Collection interface?",
+      opts: [
+        "size()",
+        "contains(Object o)",
+        "getFirst()",
+        "iterator()"
+      ],
+      a: 2,
+      exp: "SequencedCollection adds getFirst(), getLast(), addFirst(), addLast(), removeFirst(), removeLast(), and reversed() on top of Collection. These methods give defined first/last semantics to ordered collections. size(), contains(), and iterator() all exist on the base Collection interface and predate SequencedCollection."
+    },
+    {
+      tag: "Language · JEP 506",
+      q: "ScopedValue.where(KEY, value).call(callable) — if the Callable throws a checked exception, what must the enclosing method declare?",
+      opts: [
+        "Nothing — ScopedValue.call() always wraps checked exceptions in RuntimeException",
+        "The checked exception type(s) thrown by the Callable",
+        "ScopeException",
+        "Exception — .call() always forces a broad throws declaration"
+      ],
+      a: 1,
+      exp: "ScopedValue.Carrier.call(Callable<T>) propagates checked exceptions directly — it is generic over the exception type (throws X). So if your callable throws IOException, the enclosing method must declare throws IOException (or catch it). This is different from .run(Runnable) which only runs code that throws unchecked exceptions. The propagation is type-safe and does NOT wrap in RuntimeException."
+    },
+    {
+      tag: "JVM · JEP 483",
+      q: "The AOT Class Loading & Linking cache (JEP 483, available in Java 25) primarily speeds up startup by:",
+      opts: [
+        "Compiling Java bytecode to native machine code ahead of time",
+        "Caching already-loaded and linked class data so subsequent JVM starts skip that work",
+        "Caching JIT-compiled native code to a persistent file",
+        "Pre-computing GC root sets at build time"
+      ],
+      a: 1,
+      exp: "JEP 483 ('Ahead-of-Time Class Loading and Linking') caches the result of loading and linking classes — the expensive startup work of reading .class files, resolving references, and running <clinit>. On subsequent runs, the JVM replays the cached state instead of redoing it. This is different from AOT compilation (native code generation) — the bytecode still runs on the JIT, just with the class-loading overhead removed. It's also distinct from JIT profile-guided optimization (PGO) or GC root pre-computation."
+    }
+  ]
+
+}; // end QUESTIONS
+
+// ============================================================
+// Quiz engine
+// ============================================================
+const container  = document.getElementById('quiz-container');
+const emptyState = document.getElementById('quiz-empty');
+const scorePill  = document.getElementById('score-pill');
+const resetBtn   = document.getElementById('reset-btn');
+const progressWrap = document.getElementById('progress-wrap');
+const progressFill = document.getElementById('progress-fill');
+const versionSel = document.getElementById('version-select');
+
+let state = {};   // { qIdx: { selected: N|null, revealed: bool } }
+let currentVersion = null;
+
+function loadVersion(v) {
+  currentVersion = v;
+  state = {};
+  const qs = QUESTIONS[v];
+  if (!qs) {
+    container.innerHTML = '<div id="quiz-empty"><span class="big-icon">🚧</span>Questions for Java ' + v + ' are coming soon.</div>';
+    progressWrap.style.display = 'none';
+    resetBtn.style.display = 'none';
+    scorePill.textContent = '—';
+    scorePill.className = 'score-pill';
+    return;
+  }
+  qs.forEach((_, i) => { state[i] = { selected: null, revealed: false }; });
+  progressWrap.style.display = 'block';
+  resetBtn.style.display = 'inline-block';
+  renderAll(qs);
+  updateScore();
+}
+
+function renderAll(qs) {
+  container.innerHTML = '';
+  qs.forEach((q, i) => renderCard(q, i));
+}
+
+function renderCard(q, i) {
+  const s = state[i];
+  const letters = ['A', 'B', 'C', 'D'];
+
+  const card = document.createElement('div');
+  card.className = 'q-card';
+  card.id = 'qcard-' + i;
+
+  const meta = document.createElement('div');
+  meta.className = 'q-meta';
+  meta.innerHTML = '<span class="q-num">Q' + (i+1) + ' / ' + QUESTIONS[currentVersion].length + '</span>'
+                 + '<span class="q-tag">' + escH(q.tag) + '</span>';
+  card.appendChild(meta);
+
+  const qtext = document.createElement('div');
+  qtext.className = 'q-text';
+  qtext.textContent = q.q;
+  card.appendChild(qtext);
+
+  const optsDiv = document.createElement('div');
+  optsDiv.className = 'q-opts';
+  q.opts.forEach((opt, j) => {
+    const btn = document.createElement('button');
+    btn.className = 'q-opt';
+    btn.dataset.qi = i;
+    btn.dataset.oi = j;
+    btn.disabled = s.revealed;
+    btn.innerHTML = '<span class="opt-letter">' + letters[j] + '</span><span>' + escH(opt) + '</span>';
+    if (s.selected === j) btn.classList.add('selected');
+    if (s.revealed) {
+      if (j === q.a) btn.classList.add('reveal-correct');
+      else if (j === s.selected && s.selected !== q.a) btn.classList.add('reveal-wrong');
+    }
+    btn.addEventListener('click', () => selectOption(i, j));
+    optsDiv.appendChild(btn);
+  });
+  card.appendChild(optsDiv);
+
+  const actions = document.createElement('div');
+  actions.className = 'q-actions';
+
+  const showBtn = document.createElement('button');
+  showBtn.className = 'show-btn' + (s.revealed ? ' revealed' : '');
+  showBtn.textContent = s.revealed ? '✓ Answer Shown' : 'Show Answer';
+  showBtn.addEventListener('click', () => revealAnswer(i));
+  actions.appendChild(showBtn);
+
+  const badge = document.createElement('span');
+  badge.className = 'q-result-badge';
+  badge.id = 'badge-' + i;
+  if (s.revealed && s.selected !== null) {
+    badge.style.display = 'inline-block';
+    if (s.selected === q.a) { badge.className += ' correct'; badge.textContent = '✓ Correct!'; }
+    else                    { badge.className += ' wrong';   badge.textContent = '✗ Wrong';    }
+  }
+  actions.appendChild(badge);
+  card.appendChild(actions);
+
+  const answerBlock = document.createElement('div');
+  answerBlock.className = 'answer-block' + (s.revealed ? ' visible' : '');
+  answerBlock.id = 'ans-' + i;
+  answerBlock.innerHTML = '<div class="correct-line">Correct answer: ' + letters[q.a] + ') ' + escH(q.opts[q.a]) + '</div>'
+                        + '<p>' + escH(q.exp) + '</p>';
+  card.appendChild(answerBlock);
+
+  if (s.revealed) {
+    if (s.selected === q.a)                          card.classList.add('correct-card');
+    else if (s.selected !== null && s.selected !== q.a) card.classList.add('wrong-card');
+  }
+
+  container.appendChild(card);
+}
+
+function selectOption(qi, oi) {
+  if (state[qi].revealed) return;
+  state[qi].selected = oi;
+
+  const card = document.getElementById('qcard-' + qi);
+  card.querySelectorAll('.q-opt').forEach((btn, j) => {
+    btn.classList.remove('selected');
+    if (j === oi) btn.classList.add('selected');
+  });
+}
+
+function revealAnswer(qi) {
+  const q = QUESTIONS[currentVersion][qi];
+  const s = state[qi];
+  s.revealed = true;
+
+  const card = document.getElementById('qcard-' + qi);
+  card.classList.remove('correct-card', 'wrong-card');
+
+  card.querySelectorAll('.q-opt').forEach((btn, j) => {
+    btn.disabled = true;
+    btn.classList.remove('selected');
+    if (j === q.a) btn.classList.add('reveal-correct');
+    else if (j === s.selected && s.selected !== q.a) btn.classList.add('reveal-wrong');
+  });
+
+  const showBtn = card.querySelector('.show-btn');
+  showBtn.textContent = '✓ Answer Shown';
+  showBtn.classList.add('revealed');
+
+  const block = document.getElementById('ans-' + qi);
+  block.classList.add('visible');
+
+  const badge = document.getElementById('badge-' + qi);
+  if (s.selected !== null) {
+    badge.style.display = 'inline-block';
+    if (s.selected === q.a) { badge.className = 'q-result-badge correct'; badge.textContent = '✓ Correct!'; }
+    else                    { badge.className = 'q-result-badge wrong';   badge.textContent = '✗ Wrong';    }
+  }
+
+  if (s.selected === q.a)                          card.classList.add('correct-card');
+  else if (s.selected !== null && s.selected !== q.a) card.classList.add('wrong-card');
+
+  updateScore();
+}
+
+function updateScore() {
+  const qs = QUESTIONS[currentVersion];
+  if (!qs) return;
+  const revealed = Object.values(state).filter(s => s.revealed);
+  const correct  = revealed.filter((s, i) => s.selected === qs[i] && s.selected === qs[i]?.a);
+  // recalculate properly
+  let rev = 0, cor = 0;
+  qs.forEach((q, i) => {
+    if (state[i].revealed) { rev++; if (state[i].selected === q.a) cor++; }
+  });
+
+  if (rev === 0) {
+    scorePill.textContent = '—';
+    scorePill.className = 'score-pill';
+  } else {
+    scorePill.textContent = cor + ' / ' + rev;
+    scorePill.className = 'score-pill has-score';
+  }
+
+  const pct = (rev / qs.length) * 100;
+  progressFill.style.width = pct + '%';
+}
+
+resetBtn.addEventListener('click', () => {
+  if (currentVersion) loadVersion(currentVersion);
+});
+
+versionSel.addEventListener('change', () => {
+  const v = versionSel.value;
+  if (v) loadVersion(v);
+  else {
+    container.innerHTML = '<div id="quiz-empty"><span class="big-icon">🎯</span>Select a Java version above to start the quiz.</div>';
+    progressWrap.style.display = 'none';
+    resetBtn.style.display = 'none';
+    scorePill.textContent = '—';
+    scorePill.className = 'score-pill';
+    currentVersion = null;
+  }
+});
+
+function escH(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

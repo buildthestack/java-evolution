@@ -69,6 +69,7 @@
 <a href="#pg-topics-jwebserver-html">Simple Web Server — complete guide</a>
 <a href="#pg-topics-java-agent-html">Java Agents &amp; Instrumentation — complete guide</a>
 <a href="#pg-interview-index-html">Java Interview Questions — Java Evolution</a>
+<a href="#pg-interview-quiz-html">Java MCQ Quiz — Java Evolution</a>
 <a href="#pg-interview-core-java-html">Core Java Interview Questions — Java Evolution</a>
 <a href="#pg-interview-advanced-java-html">Advanced Java Interview Questions — Java Evolution</a>
 </div>
@@ -13599,6 +13600,11 @@ TargetApp exiting</code></pre></div>
 
   <h2>Categories</h2>
   <div class="card-grid">
+    <a class="card" href="#pg-interview-quiz-html">
+      <h3>🎯 MCQ Quiz</h3>
+      <p>Multiple-choice questions by Java version — select an answer, hit Show Answer to reveal
+      the correct option and a detailed explanation. Java 25 live; more versions coming.</p>
+    </a>
     <a class="card" href="#pg-interview-core-java-html">
       <h3>📗 Core Java</h3>
       <p>HashMap internals, hashing, String vs StringBuilder vs StringBuffer, ClassLoaders, GC basics,
@@ -13618,6 +13624,43 @@ TargetApp exiting</code></pre></div>
     without renumbering anything already there.
   </div>
 
+</section>
+<section id="pg-interview-quiz-html" class="print-page">
+  <p class="sec-tag">Interview prep · <a href="#pg-interview-index-html">Interview home</a></p>
+  <h1>Java MCQ Quiz</h1>
+  <p class="lead">
+    Multiple-choice questions by Java version — pick one, then hit <strong>Show Answer</strong>
+    to reveal the correct option and a full explanation.
+  </p>
+
+  <!-- Controls row -->
+  <div class="quiz-controls">
+    <label for="version-select">Java Version</label>
+    <select id="version-select">
+      <option value="">— pick a version —</option>
+      <option value="25">Java 25 · LTS  (20 questions)</option>
+      <option value="21">Java 21 · LTS  (coming soon)</option>
+      <option value="17">Java 17 · LTS  (coming soon)</option>
+      <option value="26">Java 26  (coming soon)</option>
+    </select>
+    <div class="quiz-score">
+      Score: <span class="score-pill" id="score-pill">—</span>
+      <button id="reset-btn" style="display:none">↺ Reset</button>
+    </div>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="progress-bar-wrap" id="progress-wrap">
+    <div class="progress-bar-fill" id="progress-fill"></div>
+  </div>
+
+  <!-- Question container -->
+  <div id="quiz-container">
+    <div id="quiz-empty">
+      <span class="big-icon">🎯</span>
+      Select a Java version above to start the quiz.
+    </div>
+  </div>
 </section>
 <section id="pg-interview-core-java-html" class="print-page">
   <p class="sec-tag">Interview questions · <a href="#pg-interview-index-html">Interview home</a></p>

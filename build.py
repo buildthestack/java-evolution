@@ -29,7 +29,7 @@ PAGES = [
     "topics/aot-cache.html", "topics/jshell.html", "topics/jlink-jpackage.html",
     "topics/jfr.html", "topics/jmx.html", "topics/jwebserver.html",
     "topics/java-agent.html",
-    "interview/index.html", "interview/core-java.html", "interview/advanced-java.html",
+    "interview/index.html", "interview/quiz.html", "interview/core-java.html", "interview/advanced-java.html",
 ]
 
 PAGE_SET = set(PAGES)
