@@ -19,6 +19,7 @@ PAGES = [
     "versions/java-8.html",
     "versions/java-9.html", "versions/java-11.html", "versions/java-17.html",
     "versions/java-21.html", "versions/java-25.html", "versions/java-26.html",
+    "versions/java-27.html",
     "topics/generics.html", "topics/reflection.html", "topics/annotations.html",
     "topics/var.html", "topics/records.html", "topics/sealed-classes.html",
     "topics/pattern-matching-switch.html", "topics/text-blocks-strings.html",

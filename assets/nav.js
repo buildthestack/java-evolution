@@ -26,7 +26,8 @@
       { href: "versions/java-17.html", label: "Java 17  (+12–16)  · LTS" },
       { href: "versions/java-21.html", label: "Java 21  (+18–20)  · LTS" },
       { href: "versions/java-25.html", label: "Java 25  (+22–24)  · LTS" },
-      { href: "versions/java-26.html", label: "Java 26" }
+      { href: "versions/java-26.html", label: "Java 26" },
+      { href: "versions/java-27.html", label: "Java 27" }
     ]},
     { title: "Deep dives — core Java", items: [
       { href: "topics/generics.html",               label: "Generics" },

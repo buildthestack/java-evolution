@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Java 27 — new features</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root="../" data-page="versions/java-27.html" data-title="Java 27">
+<main>
+  <p class="sec-tag">September 2026</p>
+  <h1>Java 27</h1>
+  <p class="lead">
+    A focused quality-and-security release: <strong>G1 is now the default everywhere</strong>
+    (even small containers), <strong>compact object headers</strong> flip from opt-in to on-by-default,
+    a brand-new <strong>post-quantum TLS 1.3</strong> hybrid key exchange lands as final, and
+    <strong>JFR data redaction</strong> keeps secrets out of production profiling files — while the
+    long-running previews (lazy constants, primitive patterns, structured concurrency, PEM encodings)
+    each advance another round with targeted API refinements.
+  </p>
+
+  <div class="hero-stats">
+    <div class="stat"><span class="num">4</span><span class="lbl">finalized JEPs</span></div>
+    <div class="stat"><span class="num">G1</span><span class="lbl">default GC everywhere <span class="badge jep">JEP 523</span></span></div>
+    <div class="stat"><span class="num">8 B</span><span class="lbl">object header (was 16 B) <span class="badge jep">JEP 534</span></span></div>
+    <div class="stat"><span class="num">ML-KEM</span><span class="lbl">post-quantum TLS 1.3 <span class="badge jep">JEP 527</span></span></div>
+    <div class="stat"><span class="num">Non-LTS</span><span class="lbl">6-month feature release</span></div>
+  </div>
+
+  <div class="note"><strong>Non-LTS.</strong> Java 27 is a 6-month feature release. The next LTS is
+  Java 29 (September 2027). Production teams on Java 25 LTS should track these as previews of what's
+  coming.</div>
+
+  <div class="gotcha">
+    <strong>⚠ Migration watch-outs (26 → 27).</strong>
+    <ul>
+      <li><strong>Compact object headers on by default</strong> <span class="badge jep">JEP 534</span> —
+        native agents, JVM TI tools, or off-heap serializers that hard-code <code>16</code> as the header
+        size will now be wrong. Use <code>-XX:-UseCompactObjectHeaders</code> to restore the old layout
+        while you update tooling. <code>Instrumentation.getObjectSize()</code> returns correct sizes
+        regardless.</li>
+      <li><strong>G1 replaces Serial as default in constrained environments</strong>
+        <span class="badge jep">JEP 523</span> — containers with &lt;512 MB heap or single-CPU used to
+        get Serial GC automatically; they now get G1. GC log format and pause characteristics change.
+        Use <code>-XX:+UseSerialGC</code> to opt back if needed.</li>
+      <li><strong>Structured Concurrency preview API changes</strong>
+        <span class="badge preview">JEP 533</span> — preview users upgrading from Java 26 must:
+        <ul>
+          <li>Replace <code>Joiner.awaitAll()</code> with <code>Joiner.awaitAllSuccessfulOrThrow()</code>
+          (awaitAll was removed)</li>
+          <li>Rename any <code>onTimeout()</code> override to <code>timeout()</code></li>
+          <li>Update <code>StructuredTaskScope</code>/<code>Joiner</code> type signatures for the new
+          third type parameter <code>R_X</code></li>
+        </ul>
+      </li>
+      <li><strong>Lazy Constants preview API changes</strong>
+        <span class="badge preview">JEP 531</span> — <code>isInitialized()</code> and
+        <code>orElse()</code> removed from <code>LazyConstant</code>. Update any code using those methods.
+        <code>Set.ofLazy(...)</code> is newly available.</li>
+    </ul>
+  </div>
+
+  <div class="page-toc">
+    <strong>On this page</strong>
+    <a href="#language">1. Language features</a>
+    <a href="#apis">2. New &amp; updated APIs</a>
+    <a href="#tooling">3. Tooling &amp; observability</a>
+    <a href="#jvm">4. JVM / performance</a>
+    <a href="#cheat">5. Summary cheat-sheet</a>
+  </div>
+
+  <!-- ============ LANGUAGE ============ -->
+  <h2 id="language">1 · Language features</h2>
+
+  <h3>Lazy Constants <span class="badge preview">Preview (3rd)</span> <span class="badge jep">JEP 531</span></h3>
+  <p><em>What changed from Java 26 (JEP 526, 2nd preview):</em></p>
+  <ul>
+    <li><strong><code>isInitialized()</code> removed</strong> — checking whether a lazy constant has
+    been initialized was deemed an antipattern (forces callers to reason about initialization state,
+    defeating the point of lazy encapsulation). Remove any such checks; just call <code>get()</code>.</li>
+    <li><strong><code>orElse()</code> removed</strong> — same reasoning. If you need a fallback value,
+    use a try/catch around <code>get()</code> or guard with your own flag.</li>
+    <li><strong><code>Set.ofLazy(Set&lt;K&gt;, Function&lt;K,V&gt;)</code> added</strong> — the lazy
+    collection family now has all three: <code>List.ofLazy</code>, <code>Map.ofLazy</code>, and now
+    <code>Set.ofLazy</code>. Each element of the backing set is computed lazily and cached on first
+    access.</li>
+  </ul>
+  <div class="ba">
+    <div class="before"><div class="ba-label">Java 26 — methods removed in 27</div>
+      <pre><code class="java">LazyConstant&lt;Config&gt; cfg = LazyConstant.of(this::load);
+
+// these no longer exist in Java 27:
+if (!cfg.isInitialized()) warmUp();
+Config c = cfg.orElse(Config.defaults());</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">Java 27 — just call get()</div>
+      <pre><code class="java">LazyConstant&lt;Config&gt; cfg = LazyConstant.of(this::load);
+
+// get() is the only access path; failure retries, success caches
+Config c = cfg.get();
+
+// new in 27: Set.ofLazy
+Set&lt;String&gt; roles = Set.of("admin", "user", "guest");
+Set&lt;Permissions&gt; perms =
+    Set.ofLazy(roles, role -&gt; loadPermissions(role));</code></pre>
+    </div>
+  </div>
+  <p>The full <code>LazyConstant</code> contract (compute-once, retry on failure, identity equals,
+  cycle detection) is unchanged — see the
+  <a href="../versions/java-26.html#apis">Java 26 page</a> for the detailed examples.</p>
+
+  <h3>Primitive types in patterns, <code>instanceof</code> &amp; <code>switch</code>
+    <span class="badge preview">Preview (5th)</span> <span class="badge jep">JEP 532</span></h3>
+  <p><em>Why it's still in preview:</em> the exhaustiveness rules for primitive types in sealed-class
+  switches and the interaction between primitive narrowing patterns and numeric promotion required
+  additional spec work. No user-visible API changes from Java 26 — this is an internal-correctness
+  round. The feature allows:</p>
+  <div class="ba">
+    <div class="before"><div class="ba-label">Before — manual cast + range check</div>
+      <pre><code class="java">Object o = sensor.readValue();
+if (o instanceof Number n) {
+  double d = n.doubleValue();
+  if (d == (int) d) process((int) d);   // fits-in-int check by hand
+  else processDouble(d);
+}</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">After (preview, Java 27)</div>
+      <pre><code class="java">switch (sensor.readValue()) {
+  case int i    -&gt; process(i);        // only matches if value fits exactly in int
+  case double d -&gt; processDouble(d);
+  case null     -&gt; handleMissing();
+  default       -&gt; {}
+}</code></pre>
+    </div>
+  </div>
+
+  <h3>Structured Concurrency
+    <span class="badge preview">Preview (7th)</span> <span class="badge jep">JEP 533</span></h3>
+  <p><em>What changed from Java 26 (JEP 525, 6th preview):</em></p>
+  <ul>
+    <li><strong>New third type parameter <code>R_X</code></strong> — <code>StructuredTaskScope</code>
+    and <code>Joiner</code> gain a third type parameter encoding the exception type the
+    <code>Joiner.result()</code> method declares, giving type-safe checked-exception propagation:
+    <code>StructuredTaskScope&lt;T, R, X extends Throwable&gt;</code>.</li>
+    <li><strong><code>open()</code> factory method added</strong> — a new static factory
+    <code>StructuredTaskScope.open(Joiner&lt;T,R,X&gt;)</code> replaces the old constructor-style entry
+    point, making the intent clearer and enabling future non-blocking entry points.</li>
+    <li><strong><code>awaitAll()</code> removed</strong> — the built-in Joiner that waited for all
+    subtasks and never threw was removed. Use <code>awaitAllSuccessfulOrThrow()</code> or a custom
+    Joiner instead.</li>
+    <li><strong><code>onTimeout()</code> → <code>timeout()</code></strong> — the Joiner hook for
+    handling scope timeout is renamed from <code>onTimeout</code> to <code>timeout</code>.</li>
+  </ul>
+  <div class="ba">
+    <div class="before"><div class="ba-label">Java 26 style</div>
+      <pre><code class="java">try (var scope = StructuredTaskScope.open(
+        Joiner.allSuccessfulOrThrow())) {
+  var f1 = scope.fork(this::fetchUser);
+  var f2 = scope.fork(this::fetchOrders);
+  scope.join();
+  return new Result(f1.get(), f2.get());
+}</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">Java 27 (7th preview)</div>
+      <pre><code class="java">// open() is the new entry point; Joiner type params now include exception type
+try (var scope = StructuredTaskScope.open(
+        Joiner.&lt;Result, List&lt;Result&gt;, RuntimeException&gt;allSuccessfulOrThrow())) {
+  var f1 = scope.fork(this::fetchUser);
+  var f2 = scope.fork(this::fetchOrders);
+  scope.join();
+  return new Result(f1.get(), f2.get());
+}</code></pre>
+    </div>
+  </div>
+  <p>See the <a href="../topics/structured-concurrency.html">structured concurrency deep-dive</a> for
+  the full Joiner API, custom Joiner examples, and structural confinement rules.</p>
+
+  <!-- ============ APIS ============ -->
+  <h2 id="apis">2 · New &amp; updated APIs</h2>
+
+  <h3>Post-Quantum Hybrid Key Exchange for TLS 1.3
+    <span class="badge added">Final</span> <span class="badge jep">JEP 527</span></h3>
+  <p><em>Why it matters:</em> current TLS 1.3 key exchange (ECDHE) is secure against today's computers
+  but would be broken by a sufficiently powerful quantum computer using Shor's algorithm. JEP 527 adds
+  three <strong>hybrid</strong> key-exchange mechanisms that combine ML-KEM (NIST-standardized,
+  formerly known as Kyber) with classical ECDHE — so a connection is protected even if
+  <em>either</em> algorithm is broken, but not both. The new named groups:</p>
+  <table class="data">
+    <tr><th>Named group</th><th>Components</th><th>Default?</th></tr>
+    <tr><td><code>X25519MLKEM768</code></td><td>X25519 + ML-KEM-768</td><td>Yes — enabled by default</td></tr>
+    <tr><td><code>SecP256r1MLKEM768</code></td><td>secp256r1 + ML-KEM-768</td><td>No</td></tr>
+    <tr><td><code>SecP384r1MLKEM1024</code></td><td>secp384r1 + ML-KEM-1024</td><td>No</td></tr>
+  </table>
+  <p><code>X25519MLKEM768</code> is inserted into the default TLS named-groups list ahead of the
+  existing ECDHE groups, so any TLS 1.3 server that also supports it will automatically negotiate
+  post-quantum-hybrid key exchange — no code change required for existing applications.</p>
+  <div class="ba">
+    <div class="before"><div class="ba-label">Before — ECDHE only</div>
+      <pre><code class="java">HttpClient client = HttpClient.newBuilder()
+    .version(HttpClient.Version.HTTP_2)
+    .build();
+// TLS handshake uses ECDHE — vulnerable to future quantum attack</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">After (Java 27) — hybrid by default</div>
+      <pre><code class="java">HttpClient client = HttpClient.newBuilder()
+    .version(HttpClient.Version.HTTP_2)
+    .build();
+// TLS handshake now uses X25519MLKEM768 when the server supports it —
+// no code change needed; Java 27 negotiates the hybrid group automatically
+
+// Explicit opt-in to stronger variant for high-security contexts:
+SSLParameters params = new SSLParameters();
+params.setNamedGroups(new String[]{"SecP384r1MLKEM1024", "X25519MLKEM768"});
+SSLContext ctx = SSLContext.getInstance("TLS");
+ctx.init(null, null, null);
+SSLEngine engine = ctx.createSSLEngine();
+engine.setSSLParameters(params);</code></pre>
+    </div>
+  </div>
+  <div class="note"><strong>Interoperability:</strong> if the remote server doesn't support ML-KEM, the
+  TLS handshake falls back to the next named group in the preference list (a classical ECDHE group) —
+  there is no connection failure. The hybrid upgrade is transparent and backward-compatible.</div>
+
+  <h3>PEM Encodings of Cryptographic Objects
+    <span class="badge preview">Preview (3rd)</span> <span class="badge jep">JEP 538</span></h3>
+  <p><em>What changed from Java 26 (JEP 524, 2nd preview):</em> the <code>PEMDecoder</code> and
+  <code>PEMEncoder</code> classes gained support for PKCS#8 v2.0 (OneAsymmetricKey) key format and
+  certificate revocation lists (CRL). The API shape is unchanged — the same
+  <code>PEMEncoder.of()</code> / <code>PEMDecoder.of()</code> entry points, same
+  <code>encodeToString()</code> / <code>decode()</code> methods. PEM encodings are on track to be
+  <strong>finalized in Java 28</strong> (JEP 542 has already been integrated targeting JDK 28).</p>
+  <pre><code class="java">// 3rd preview — same API as Java 26, now supporting CRLs:
+PEMDecoder dec = PEMDecoder.of();
+X509CRL crl = dec.decode(Files.readString(Path.of("revoked.pem")), X509CRL.class);
+
+PEMEncoder enc = PEMEncoder.of();
+System.out.println(enc.encodeToString(crl));   // -----BEGIN X509 CRL-----  ...</code></pre>
+
+  <!-- ============ TOOLING ============ -->
+  <h2 id="tooling">3 · Tooling &amp; observability</h2>
+
+  <h3>JFR In-Process Data Redaction <span class="badge added">Final</span> <span class="badge jep">JEP 536</span></h3>
+  <p><em>Why it matters:</em> JDK Flight Recorder is the go-to profiling tool for production JVMs, but
+  some of its built-in events capture data you'd rather not leave in a <code>.jfr</code> file —
+  command-line arguments, environment variable values, and system property values can all contain
+  API keys, passwords, or internal path names. JEP 536 lets you declare which fields to redact
+  <em>before</em> they are written to the recording, so the sensitive data never touches disk.</p>
+  <p>Three built-in redaction targets, controlled via the JFR configuration file or
+  <code>@Redact</code> annotation:</p>
+  <table class="data">
+    <tr><th>Target</th><th>JFR event field</th><th>Redacted to</th></tr>
+    <tr><td>System properties</td><td><code>jdk.SystemPropertyRead#value</code></td><td><code>*redacted*</code></td></tr>
+    <tr><td>Environment variables</td><td><code>jdk.EnvironmentVariable#value</code></td><td><code>*redacted*</code></td></tr>
+    <tr><td>JVM arguments</td><td><code>jdk.JVMInformation#jvmArguments</code></td><td><code>*redacted*</code></td></tr>
+  </table>
+  <div class="ba">
+    <div class="before"><div class="ba-label">Before — system property value written verbatim</div>
+      <pre><code class="java">// JFR recording with jdk.SystemPropertyRead would capture:
+// value = "jdbc:postgresql://prod-db:5432/mydb?user=admin&amp;password=s3cr3t"</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">After (Java 27) — redacted before write</div>
+      <pre><code class="java">// jfr config (profile.jfc) — declarative redaction:
+// &lt;event name="jdk.SystemPropertyRead"&gt;
+//   &lt;field name="value" redact="true"/&gt;
+// &lt;/event&gt;
+
+// JFR recording now writes:
+// value = "*redacted*"  — never hits disk in cleartext
+
+// For custom events, use @Redact on the field:
+@Name("com.example.DBConnect")
+class DBConnectEvent extends Event {
+  String host;
+  @Redact String password;   // redacted in recording, not in code
+}</code></pre>
+    </div>
+  </div>
+  <div class="tip">Redaction is in-process and zero-copy — the value is replaced before the event is
+  serialized, so the sensitive string never appears in any JFR chunk, even in an in-memory continuous
+  recording. There is no runtime overhead on code paths that don't emit the redacted events.</div>
+
+  <h3>Vector API <span class="badge">12th incubator</span> <span class="badge jep">JEP 537</span></h3>
+  <p>The Vector API continues to incubate — still requires
+  <code>--add-modules jdk.incubator.vector</code>. No API changes this round. Finalization is blocked
+  on Project Valhalla value types, which the Vector API needs to avoid boxing overhead. No Valhalla
+  JEPs appear in JDK 27; this is the 12th consecutive incubator round.</p>
+
+  <!-- ============ JVM / PERF ============ -->
+  <h2 id="jvm">4 · JVM / performance</h2>
+
+  <h3>G1 as Default GC in All Environments <span class="badge added">Final</span> <span class="badge jep">JEP 523</span></h3>
+  <p><em>Why it matters:</em> since Java 9 (JEP 248), G1 has been the default GC on server-class
+  machines. But the JVM's ergonomic rules defined "server-class" as requiring at least 2 CPUs
+  <em>and</em> at least 1792 MB of physical memory — configurations below that threshold (single-core
+  containers, microservices with small heap caps) silently fell back to the Serial GC. JEP 523
+  removes that fallback: <strong>G1 is now the default everywhere</strong> on all supported
+  platforms.</p>
+  <table class="data">
+    <tr><th>Environment</th><th>Default GC before Java 27</th><th>Default GC in Java 27+</th></tr>
+    <tr><td>Multi-core, ≥ 1792 MB RAM</td><td>G1</td><td>G1 (unchanged)</td></tr>
+    <tr><td>Single-core container</td><td>Serial</td><td>G1</td></tr>
+    <tr><td>Heap &lt; 512 MB (constrained)</td><td>Serial</td><td>G1</td></tr>
+    <tr><td>All other cases</td><td>Serial</td><td>G1</td></tr>
+  </table>
+  <div class="ba">
+    <div class="before"><div class="ba-label">Before — Serial chosen automatically in a small container</div>
+      <pre><code class="bash">$ java -Xmx256m -XX:+PrintFlagsFinal -version | grep UseSerialGC
+# bool UseSerialGC = true  {product} {ergonomic}   &lt;-- JVM picked Serial</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">After (Java 27) — G1 everywhere</div>
+      <pre><code class="bash">$ java -Xmx256m -XX:+PrintFlagsFinal -version | grep UseG1GC
+# bool UseG1GC = true  {product} {ergonomic}   &lt;-- G1 in every environment
+
+# To opt back to Serial (e.g. smallest-possible footprint CLI tools):
+$ java -Xmx256m -XX:+UseSerialGC MyTool</code></pre>
+    </div>
+  </div>
+  <div class="note">G1 has lower throughput than Serial for tiny, short-lived workloads (CLI tools
+  that live under 1 second) due to concurrent refinement thread startup. For those, pass
+  <code>-XX:+UseSerialGC</code> explicitly. For containerized services with any meaningful traffic,
+  G1 is the right default — concurrent marking avoids the long full-GC pauses Serial can produce
+  as the live set grows.</div>
+
+  <h3>Compact Object Headers by Default <span class="badge added">Final</span> <span class="badge jep">JEP 534</span></h3>
+  <p><em>Why it matters:</em> every Java object on a 64-bit JVM carries a header containing the
+  <strong>mark word</strong> (8 bytes — hash code, lock state, GC age) and the
+  <strong>class pointer</strong> (8 bytes uncompressed, or 4 bytes with compressed class pointers) —
+  a minimum of 12–16 bytes per object before any fields. JEP 519 introduced an experimental
+  Compact Object Header (Java 25) that squeezes both into a single 64-bit (8-byte) word by encoding
+  the class pointer into spare bits of the mark word. JEP 534 flips this from opt-in
+  (<code>-XX:+UseCompactObjectHeaders</code>) to <strong>on by default</strong>.</p>
+  <table class="data">
+    <tr><th></th><th>Standard header (pre-Java 27)</th><th>Compact header (Java 27+)</th></tr>
+    <tr><td>Size</td><td>16 bytes</td><td>8 bytes</td></tr>
+    <tr><td>Mark word</td><td>8 bytes</td><td>Merged into single 64-bit word</td></tr>
+    <tr><td>Class pointer</td><td>4–8 bytes (compressed or not)</td><td>Encoded in spare bits of the mark word</td></tr>
+    <tr><td>Heap saving</td><td>—</td><td>Up to 10–20% for object-heavy workloads</td></tr>
+  </table>
+  <div class="ba">
+    <div class="before"><div class="ba-label">Java 26 — 16-byte header, opt-in compact</div>
+      <pre><code class="bash">$ java -jar agent.jar TargetApp   # standard 16-byte headers
+$ java -XX:+UseCompactObjectHeaders -jar agent.jar TargetApp  # 8-byte, opt-in</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">Java 27 — 8-byte header by default</div>
+      <pre><code class="bash">$ java -jar agent.jar TargetApp   # compact 8-byte headers by default
+
+# To restore the 16-byte layout (for native tooling that hard-codes the size):
+$ java -XX:-UseCompactObjectHeaders -jar agent.jar TargetApp</code></pre>
+    </div>
+  </div>
+  <div class="warn"><strong>Tooling impact:</strong> native agents, JVMTI tools, and off-heap
+  serializers that directly read the object header (e.g. to locate the class pointer at a fixed byte
+  offset) must be updated. <code>Instrumentation.getObjectSize()</code> and
+  <code>sun.misc.Unsafe.objectFieldOffset()</code> return correct values for compact headers and
+  should be used instead of hard-coded offsets. Libraries known to hard-code header offsets: older
+  versions of Kryo, some JVM profiling agents, some memory-layout inspection utilities.</div>
+
+  <!-- ============ SUMMARY ============ -->
+  <h2 id="cheat">5 · Summary cheat-sheet</h2>
+  <div class="cheat">
+    <h3>Java 27 in one glance</h3>
+    <ul>
+      <li><strong>G1 is now the default GC everywhere <span class="badge jep">JEP 523</span>:</strong>
+        Serial is no longer auto-selected in constrained environments. Use
+        <code>-XX:+UseSerialGC</code> explicitly for tiny CLI tools.</li>
+      <li><strong>Compact object headers on by default <span class="badge jep">JEP 534</span>:</strong>
+        every object header shrinks from 16 to 8 bytes. Native agents and tools that hard-code
+        the old header size must be updated. Opt out with <code>-XX:-UseCompactObjectHeaders</code>.
+      </li>
+      <li><strong>Post-quantum TLS 1.3 <span class="badge jep">JEP 527</span>:</strong>
+        <code>X25519MLKEM768</code> (ML-KEM + ECDHE hybrid) is the new default named group — active
+        automatically when the server supports it, no code change needed. Falls back to classical
+        ECDHE if not supported.</li>
+      <li><strong>JFR data redaction <span class="badge jep">JEP 536</span>:</strong>
+        system properties, env vars, and JVM arguments can be redacted in JFR recordings before
+        they hit disk. Use <code>@Redact</code> on custom event fields. No overhead on paths that
+        don't emit the event.</li>
+      <li><strong>Lazy Constants — 3rd preview <span class="badge jep">JEP 531</span>:</strong>
+        <code>isInitialized()</code> and <code>orElse()</code> removed. <code>Set.ofLazy()</code>
+        added (all three lazy collection types now exist). No other changes.</li>
+      <li><strong>Structured Concurrency — 7th preview <span class="badge jep">JEP 533</span>:</strong>
+        <code>StructuredTaskScope</code> and <code>Joiner</code> gain third type parameter for exception
+        type; <code>awaitAll()</code> removed; <code>onTimeout()</code> renamed to
+        <code>timeout()</code>; new <code>open()</code> factory.</li>
+      <li><strong>Primitive patterns — 5th preview <span class="badge jep">JEP 532</span>:</strong>
+        spec correctness fixes for exhaustiveness with primitives; no user-visible API changes.</li>
+      <li><strong>PEM Encodings — 3rd preview <span class="badge jep">JEP 538</span>:</strong>
+        gains PKCS#8 v2.0 and CRL support. On track to be <strong>final in Java 28</strong>.</li>
+      <li><strong>Vector API — 12th incubator <span class="badge jep">JEP 537</span>:</strong>
+        still requires <code>--add-modules jdk.incubator.vector</code>. Finalization awaits Project
+        Valhalla. No API changes.</li>
+      <li><strong>See also:</strong> <a href="../topics/g1-gc.html">G1 GC deep dive</a> ·
+        <a href="../topics/jfr.html">JFR &amp; Mission Control</a> ·
+        <a href="../topics/structured-concurrency.html">Structured Concurrency deep-dive</a></li>
+    </ul>
+  </div>
+
+</main>
+<script src="../assets/nav.js"></script>
+<script src="../assets/highlight.js"></script>
+</body>
+</html>
