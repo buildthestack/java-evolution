@@ -203,19 +203,18 @@ java -XX:+UseZGC -XX:AOTCache=app.aot -cp . HelloStream
   normally without it. Your application keeps working — it just doesn't get the speed-up that run.</div>
 
   <h3>Verified success — consistent GC across training and production</h3>
-  <pre><code class="java">// train, create, AND run — all three with the SAME GC flag
-java -XX:+UseZGC -XX:AOTMode=record -XX:AOTConfiguration=app-zgc.aotconf -cp . HelloStream
-java -XX:+UseZGC -XX:AOTMode=create -XX:AOTConfiguration=app-zgc.aotconf -XX:AOTCache=app-zgc.aot -cp .
-java -XX:+UseZGC -Xlog:aot -XX:AOTCache=app-zgc.aot -cp . HelloStream
+  <pre><code class="java">// Java 25+: one command for training + cache creation; run with the SAME GC flag
+java -XX:+UseZGC -XX:AOTCacheOutput=app-zgc.aot -cp . HelloStream
+java -XX:+UseZGC -Xlog:aot   -XX:AOTCache=app-zgc.aot  -cp . HelloStream
 # verified real output:
 # hello, world
 # [info][aot] trying to map app-zgc.aot
 # [info][aot] Opened AOT cache app-zgc.aot.
 # [info][aot] The AOT cache was created with UseCompressedOops = 0, ...</code></pre>
   <p>The rule this demonstrates: <strong>the AOT cache is tied to the JVM configuration active when it
-  was built</strong> — same GC, same compressed-oops setting, same major options — throughout training,
-  creation, <em>and</em> production. Match them, and JEP 516 makes ZGC (and every other collector) work
-  exactly as smoothly as G1.</p>
+  was built</strong> — same GC, same compressed-oops setting, same major options — during
+  both the training run (<code>AOTCacheOutput</code>) and the production run (<code>AOTCache</code>).
+  Match them, and JEP 516 makes ZGC (and every other collector) work exactly as smoothly as G1.</p>
 
   <!-- ============================================================ -->
   <h2 id="profiling">6 · Advanced: AOT method profiling (warmup)</h2>
