@@ -7,7 +7,6 @@
   <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
   <link rel="stylesheet" href="../assets/style.css">
   <style>
-    /* ---- filter bar ---- */
     .ba-bar {
       display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
       background: var(--bg-alt); border: 1px solid var(--border);
@@ -17,29 +16,27 @@
     .ba-bar select {
       padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
       background: var(--bg); color: var(--text); font-size: .93rem;
-      font-family: inherit; cursor: pointer; min-width: 150px;
+      font-family: inherit; cursor: pointer; min-width: 155px;
     }
     .ba-count {
       margin-left: auto; background: var(--badge-bg); color: var(--text-soft);
       font-size: .82rem; font-weight: 600; padding: 3px 12px;
       border-radius: 20px; border: 1px solid var(--border); white-space: nowrap;
     }
-    /* ---- card ---- */
     .ba-card {
       border: 1px solid var(--border); border-radius: 12px;
-      margin-bottom: 22px; background: var(--bg); overflow: hidden;
+      margin-bottom: 18px; background: var(--bg); overflow: hidden;
     }
     .ba-header {
       display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-      padding: 11px 16px; border-bottom: 1px solid var(--border);
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
       background: var(--bg-alt);
     }
-    .ba-title { font-weight: 700; font-size: .93rem; flex: 1; min-width: 0; }
+    .ba-title { font-weight: 700; font-size: .92rem; flex: 1; min-width: 0; }
     .ba-cat {
-      font-size: .74rem; color: var(--text-soft); background: var(--bg);
+      font-size: .73rem; color: var(--text-soft); background: var(--bg);
       padding: 2px 9px; border-radius: 20px; border: 1px solid var(--border);
     }
-    /* ---- split panes ---- */
     .ba-split { display: grid; grid-template-columns: 1fr 1fr; }
     @media (max-width: 660px) { .ba-split { grid-template-columns: 1fr; } }
     .ba-pane { display: flex; flex-direction: column; min-width: 0; }
@@ -48,43 +45,46 @@
       .ba-pane:first-child { border-right: none; border-bottom: 1px solid var(--border); }
     }
     .ba-label {
-      font-size: .73rem; font-weight: 700; letter-spacing: .07em;
-      text-transform: uppercase; padding: 5px 14px;
+      font-size: .72rem; font-weight: 700; letter-spacing: .07em;
+      text-transform: uppercase; padding: 4px 14px;
       border-bottom: 1px solid var(--border);
     }
     .ba-label.old { background: #fef2f2; color: #991b1b; }
     .ba-label.new { background: #f0fdf4; color: #166534; }
-    :root[data-theme="dark"] .ba-label.old,
-    @media (prefers-color-scheme: dark) {
-      :root:not([data-theme="light"]) .ba-label.old { background: #3b0a0a; color: #fca5a5; }
-    }
-    :root[data-theme="dark"] .ba-label.new { background: #052e16; color: #86efac; }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) .ba-label.old { background: #3b0a0a; color: #fca5a5; }
       :root:not([data-theme="light"]) .ba-label.new { background: #052e16; color: #86efac; }
     }
-    .ba-pane pre {
-      margin: 0; flex: 1; overflow-x: auto;
-      font-size: .8rem; line-height: 1.55;
-    }
-    .ba-pane pre code { display: block; padding: 13px 15px; background: transparent !important; }
+    :root[data-theme="dark"] .ba-label.old { background: #3b0a0a; color: #fca5a5; }
+    :root[data-theme="dark"] .ba-label.new { background: #052e16; color: #86efac; }
+    .ba-pane pre { margin: 0; flex: 1; overflow-x: auto; font-size: .79rem; line-height: 1.55; }
+    .ba-pane pre code { display: block; padding: 12px 15px; background: transparent !important; }
     .ba-note {
-      margin: 0; padding: 7px 15px 10px;
-      font-size: .81rem; color: var(--text-soft);
+      margin: 0; padding: 6px 15px 9px; font-size: .8rem; color: var(--text-soft);
       border-top: 1px solid var(--border); background: var(--bg-alt);
     }
-    /* ---- no-results ---- */
-    #no-results { display: none; text-align: center; padding: 48px 0; color: var(--text-soft); font-size: 1.05rem; }
+    #no-results { display: none; text-align: center; padding: 48px 0; color: var(--text-soft); }
+    .ver-group { margin: 32px 0 10px; }
+    .ver-group h2 { font-size: 1.1rem; margin: 0; color: var(--text-soft);
+      border-left: 3px solid var(--accent); padding-left: 10px; }
   </style>
 </head>
 <body data-root="../" data-page="interview/before-after.html" data-title="Before → After">
 <main>
   <p class="sec-tag">Interview prep · code patterns</p>
-  <h1>Before → After <span class="badge">Java 9 – 27</span></h1>
+  <h1>Before → After <span class="badge">Java 9 – 26</span></h1>
   <p class="lead">
-    Side-by-side code comparisons — what you used to write vs. what you write today.
-    Filter by <strong>version</strong> and <strong>feature type</strong>. Only stable (non-preview) features included.
+    Side-by-side code comparisons — old idiom vs. what you write today.
+    Filter by <strong>Java version</strong> and <strong>feature type</strong>.
+    Only <strong>stable</strong> (non-preview) features.
   </p>
+
+  <div class="hero-stats">
+    <div class="stat"><span class="num" id="total-count">87</span><span class="lbl">examples</span></div>
+    <div class="stat"><span class="num">18</span><span class="lbl">Java versions</span></div>
+    <div class="stat"><span class="num">6</span><span class="lbl">categories</span></div>
+    <div class="stat"><span class="num">stable</span><span class="lbl">features only</span></div>
+  </div>
 
   <div class="ba-bar">
     <label for="ver-sel">Version</label>
@@ -93,270 +93,571 @@
       <option value="9">Java 9</option>
       <option value="10">Java 10</option>
       <option value="11">Java 11</option>
+      <option value="12">Java 12</option>
       <option value="14">Java 14</option>
       <option value="15">Java 15</option>
       <option value="16">Java 16</option>
       <option value="17">Java 17</option>
+      <option value="18">Java 18</option>
+      <option value="19">Java 19</option>
       <option value="21">Java 21</option>
       <option value="22">Java 22</option>
+      <option value="23">Java 23</option>
       <option value="24">Java 24</option>
       <option value="25">Java 25</option>
       <option value="26">Java 26</option>
     </select>
-
     <label for="cat-sel">Category</label>
     <select id="cat-sel">
       <option value="all">All categories</option>
       <option value="language">Language</option>
-      <option value="api">API</option>
+      <option value="collections">Collections</option>
+      <option value="streams">Streams &amp; Optional</option>
       <option value="concurrency">Concurrency</option>
-      <option value="jvm">JVM</option>
+      <option value="api">API</option>
+      <option value="tooling">Tooling / JVM</option>
     </select>
-
-    <span class="ba-count" id="ba-count">24 examples</span>
+    <span class="ba-count" id="ba-count">87 examples</span>
   </div>
 
   <div id="ba-grid">
 
-    <!-- ═══════════════════════════════ JAVA 9 ═══════════════════════════════ -->
+  <!-- ══════════════════════════ JAVA 9 ══════════════════════════ -->
 
-    <div class="ba-card" data-ver="9" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Private interface methods</span>
-        <span class="badge added">Java 9</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">interface Logger {
-    default void logInfo(String msg) {
-        System.out.println(
-            "[INFO] " + timestamp() + msg);
+  <div class="ba-card" data-ver="9" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Private interface methods</span><span class="badge added">Java 9</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">interface Notifier {
+    default void notifyInfo(String msg) {
+        send("[INFO] " + timestamp() + msg);
     }
-    default void logWarn(String msg) {
-        System.out.println(
-            "[WARN] " + timestamp() + msg);
+    default void notifyWarn(String msg) {
+        send("[WARN] " + timestamp() + msg);
     }
-    // no way to share logic without
-    // exposing a public helper method
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">interface Logger {
-    private String format(String lvl, String msg) {
-        return "[" + lvl + "] " + timestamp() + msg;
+    // No way to share formatting logic
+    // without making it part of the public API
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">interface Notifier {
+    private String prefix(String level) {
+        return "[" + level + "] " + timestamp();
     }
-    default void logInfo(String msg) {
-        System.out.println(format("INFO", msg));
+    default void notifyInfo(String msg) {
+        send(prefix("INFO") + msg);
     }
-    default void logWarn(String msg) {
-        System.out.println(format("WARN", msg));
+    default void notifyWarn(String msg) {
+        send(prefix("WARN") + msg);
     }
-}</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 213 — private methods keep shared logic inside the interface without polluting its public API.</p>
+}</code></pre></div>
     </div>
+    <p class="ba-note">JEP 213 — private methods keep helper logic inside the interface without exposing it as part of the contract.</p>
+  </div>
 
-    <div class="ba-card" data-ver="9" data-cat="api">
-      <div class="ba-header">
-        <span class="ba-title">Collection factory methods</span>
-        <span class="badge added">Java 9</span>
-        <span class="ba-cat">API</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">List&lt;String&gt; tags = new ArrayList&lt;&gt;();
-tags.add("java");
-tags.add("jvm");
-tags.add("jit");
-tags = Collections.unmodifiableList(tags);
-
-Map&lt;String, Integer&gt; codes = new HashMap&lt;&gt;();
-codes.put("OK", 200);
-codes.put("NOT_FOUND", 404);</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">List&lt;String&gt; tags = List.of("java", "jvm", "jit");
-
-Map&lt;String, Integer&gt; codes =
-    Map.of("OK", 200, "NOT_FOUND", 404);
-
-// Null-safe, immutable, structurally compact
-// Mutations throw UnsupportedOperationException</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 269 — <code>List.of</code>, <code>Set.of</code>, <code>Map.of</code> return compact immutable collections. No need for Guava ImmutableList.</p>
+  <div class="ba-card" data-ver="9" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Try-with-resources: effectively-final variable</span><span class="badge added">Java 9</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">InputStream  in  = new FileInputStream("a.txt");
+OutputStream out = new FileOutputStream("b.txt");
+// Must re-declare in the try() header
+try (InputStream i = in; OutputStream o = out) {
+    i.transferTo(o);
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">InputStream  in  = new FileInputStream("a.txt");
+OutputStream out = new FileOutputStream("b.txt");
+// Reference effectively-final vars directly
+try (in; out) {
+    in.transferTo(out);
+}</code></pre></div>
     </div>
+    <p class="ba-note">Variables must be effectively final (never re-assigned after the try statement). Eliminates the need for redundant alias declarations.</p>
+  </div>
 
-    <div class="ba-card" data-ver="9" data-cat="api">
-      <div class="ba-header">
-        <span class="ba-title">Stream.takeWhile / dropWhile</span>
-        <span class="badge added">Java 9</span>
-        <span class="ba-cat">API</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">// No built-in takeWhile — loop manually
-List&lt;Integer&gt; result = new ArrayList&lt;&gt;();
-for (int n : numbers) {
-    if (n &gt;= 10) break;
-    result.add(n);
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">List&lt;Integer&gt; result = numbers.stream()
-    .takeWhile(n -&gt; n &lt; 10)
-    .toList();
-
-// dropWhile skips until predicate is false
-List&lt;Integer&gt; rest = numbers.stream()
-    .dropWhile(n -&gt; n &lt; 10)
-    .toList();</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">Works on ordered streams; on unordered streams behaviour is non-deterministic. Useful for processing sorted data up to a threshold.</p>
+  <div class="ba-card" data-ver="9" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Diamond operator on anonymous classes</span><span class="badge added">Java 9</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Had to repeat the type argument
+Comparator&lt;String&gt; c =
+    new Comparator&lt;String&gt;() {
+        @Override
+        public int compare(String a, String b) {
+            return a.length() - b.length();
+        }
+    };</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Diamond infers &lt;String&gt; — no repeat
+Comparator&lt;String&gt; c =
+    new Comparator&lt;&gt;() {
+        @Override
+        public int compare(String a, String b) {
+            return a.length() - b.length();
+        }
+    };
+// In practice, just use: Comparator.comparingInt(String::length)</code></pre></div>
     </div>
+    <p class="ba-note">JEP 213 — type inference for anonymous class instantiation. Most useful when the target type carries the generics.</p>
+  </div>
 
-    <div class="ba-card" data-ver="9" data-cat="api">
-      <div class="ba-header">
-        <span class="ba-title">Optional.ifPresentOrElse / stream()</span>
-        <span class="badge added">Java 9</span>
-        <span class="ba-cat">API</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">Optional&lt;User&gt; user = findUser(id);
-if (user.isPresent()) {
-    send(user.get());
-} else {
-    log("user not found");
-}
+  <div class="ba-card" data-ver="9" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">List.of — immutable list</span><span class="badge added">Java 9</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">List&lt;String&gt; roles = new ArrayList&lt;&gt;();
+roles.add("ADMIN");
+roles.add("USER");
+roles.add("GUEST");
+roles = Collections.unmodifiableList(roles);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;String&gt; roles = List.of("ADMIN", "USER", "GUEST");
+// Null elements throw NullPointerException
+// Mutation throws UnsupportedOperationException
+// More compact in memory than ArrayList</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 269 — also <code>Set.of()</code> and <code>Map.of()</code>. For &gt;10 map entries use <code>Map.ofEntries(Map.entry(k,v), ...)</code>.</p>
+  </div>
 
-// Couldn't compose Optional into a stream pipeline</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">findUser(id).ifPresentOrElse(
-    this::send,
-    () -&gt; log("user not found")
+  <div class="ba-card" data-ver="9" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">Map.of — immutable map</span><span class="badge added">Java 9</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">Map&lt;String, Integer&gt; status = new HashMap&lt;&gt;();
+status.put("OK",        200);
+status.put("NOT_FOUND", 404);
+status.put("ERROR",     500);
+status = Collections.unmodifiableMap(status);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">Map&lt;String, Integer&gt; status = Map.of(
+    "OK",        200,
+    "NOT_FOUND", 404,
+    "ERROR",     500
 );
-
-// Optional.stream() — compose with Stream pipelines
-long active = ids.stream()
-    .map(this::findUser)
-    .flatMap(Optional::stream)  // unwrap present ones
-    .filter(User::isActive)
-    .count();</code></pre>
-        </div>
-      </div>
+// For &gt;10 entries:
+// Map.ofEntries(Map.entry("OK",200), Map.entry("ERR",500))</code></pre></div>
     </div>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 10 ═══════════════════════════════ -->
+  <div class="ba-card" data-ver="9" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">Map.entry() factory</span><span class="badge added">Java 9</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">Map.Entry&lt;String, Integer&gt; e =
+    new AbstractMap.SimpleEntry&lt;&gt;("score", 42);
 
-    <div class="ba-card" data-ver="10" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Local-variable type inference (var)</span>
-        <span class="badge added">Java 10</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">HashMap&lt;String, List&lt;Employee&gt;&gt; byDept =
+Map&lt;String, Integer&gt; big = new HashMap&lt;&gt;();
+big.put("a", 1); big.put("b", 2); // ... 15 more
+Map&lt;String, Integer&gt; immutable =
+    Collections.unmodifiableMap(big);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">Map.Entry&lt;String, Integer&gt; e = Map.entry("score", 42);
+
+// For maps with many entries:
+Map&lt;String, Integer&gt; immutable = Map.ofEntries(
+    Map.entry("a", 1),
+    Map.entry("b", 2),
+    Map.entry("c", 3)
+    // ...up to any size
+);</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Stream.ofNullable</span><span class="badge added">Java 9</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String value = config.get("key"); // may be null
+Stream&lt;String&gt; s = value != null
+    ? Stream.of(value)
+    : Stream.empty();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">Stream&lt;String&gt; s = Stream.ofNullable(config.get("key"));
+// 0-element stream for null, 1-element stream otherwise
+
+// Typical use: flatten optional values from a map
+map.values().stream()
+    .flatMap(Stream::ofNullable)
+    .forEach(this::process);</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Stream.iterate with predicate (3-arg)</span><span class="badge added">Java 9</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// 2-arg iterate is infinite — must call limit()
+Stream.iterate(0, n -&gt; n + 1)
+    .limit(10)
+    .forEach(System.out::println);
+// Easy to forget .limit() and produce an infinite loop</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// seed, hasNext predicate, next function
+Stream.iterate(0, n -&gt; n &lt; 10, n -&gt; n + 1)
+    .forEach(System.out::println);
+// Terminates when predicate returns false — no .limit() needed</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Stream.takeWhile</span><span class="badge added">Java 9</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// No built-in takeWhile — manual loop required
+List&lt;Integer&gt; result = new ArrayList&lt;&gt;();
+for (int n : sortedNumbers) {
+    if (n &gt;= 100) break;
+    result.add(n);
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;Integer&gt; result = sortedNumbers.stream()
+    .takeWhile(n -&gt; n &lt; 100)
+    .toList();
+// Short-circuits: stops at the first element that fails the predicate</code></pre></div>
+    </div>
+    <p class="ba-note">Works predictably on ordered streams. On unordered streams behaviour is non-deterministic — use on sorted data.</p>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Stream.dropWhile</span><span class="badge added">Java 9</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Skip header lines in a log/CSV
+boolean started = false;
+List&lt;String&gt; data = new ArrayList&lt;&gt;();
+for (String line : lines) {
+    if (!started &amp;&amp; line.startsWith("#")) continue;
+    started = true;
+    data.add(line);
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;String&gt; data = lines.stream()
+    .dropWhile(line -&gt; line.startsWith("#"))
+    .toList();
+// Skips leading elements while predicate is true,
+// then passes all remaining elements through</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Optional.ifPresentOrElse</span><span class="badge added">Java 9</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">Optional&lt;User&gt; user = findUser(id);
+if (user.isPresent()) {
+    sendWelcomeEmail(user.get());
+} else {
+    log.warn("User {} not found", id);
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">findUser(id).ifPresentOrElse(
+    this::sendWelcomeEmail,
+    () -&gt; log.warn("User {} not found", id)
+);</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Optional.stream() — flatten optionals in a pipeline</span><span class="badge added">Java 9</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">List&lt;User&gt; users = ids.stream()
+    .map(this::findUser)
+    .filter(Optional::isPresent)
+    .map(Optional::get)         // unwrap manually
+    .collect(Collectors.toList());</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;User&gt; users = ids.stream()
+    .map(this::findUser)
+    .flatMap(Optional::stream)  // empty Optional = 0 elements
+    .toList();</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Optional.or() — chain fallback suppliers</span><span class="badge added">Java 9</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">Optional&lt;Config&gt; cfg = fromEnv(key);
+if (!cfg.isPresent()) cfg = fromFile(key);
+if (!cfg.isPresent()) cfg = Optional.of(Config.defaults());
+return cfg.get();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">return fromEnv(key)
+    .or(() -&gt; fromFile(key))
+    .or(() -&gt; Optional.of(Config.defaults()))
+    .get();
+// Each supplier called lazily only if previous is empty</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Collectors.flatMapping</span><span class="badge added">Java 9</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Flatten tags per order, grouped by customer
+Map&lt;String, List&lt;String&gt;&gt; tagsByCustomer =
+    orders.stream().collect(Collectors.groupingBy(
+        Order::customerId,
+        Collectors.toList()        // gives List&lt;Order&gt; per customer
+    ));
+// Extra step required to extract and flatten tags</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">Map&lt;String, List&lt;String&gt;&gt; tagsByCustomer =
+    orders.stream().collect(Collectors.groupingBy(
+        Order::customerId,
+        Collectors.flatMapping(
+            o -&gt; o.tags().stream(),
+            Collectors.toList()
+        )
+    ));</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="api">
+    <div class="ba-header"><span class="ba-title">InputStream.transferTo</span><span class="badge added">Java 9</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">byte[] buf = new byte[8192];
+int n;
+while ((n = in.read(buf)) != -1) {
+    out.write(buf, 0, n);
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">long bytesCopied = in.transferTo(out);
+// Reads all bytes from in and writes to out
+// Returns total bytes transferred</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="api">
+    <div class="ba-header"><span class="ba-title">Objects.requireNonNullElse</span><span class="badge added">Java 9</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String name = rawName != null ? rawName : "Anonymous";
+int port     = cfgPort != null ? cfgPort : 8080;
+
+// Or the verbose Objects.requireNonNull + catch pattern</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String name = Objects.requireNonNullElse(rawName, "Anonymous");
+int port     = Objects.requireNonNullElse(cfgPort, 8080);
+
+// Lazy default (supplier): avoids evaluating default if not needed
+String name2 = Objects.requireNonNullElseGet(rawName,
+    () -&gt; buildDefaultName());</code></pre></div>
+    </div>
+    <p class="ba-note">Both arguments to <code>requireNonNullElse</code> must be non-null; use <code>requireNonNullElseGet</code> when the default itself might be expensive to compute.</p>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="concurrency">
+    <div class="ba-header"><span class="ba-title">CompletableFuture.orTimeout</span><span class="badge added">Java 9</span><span class="ba-cat">Concurrency</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">ScheduledExecutorService sched =
+    Executors.newSingleThreadScheduledExecutor();
+CompletableFuture&lt;String&gt; cf = fetchAsync();
+sched.schedule(
+    () -&gt; cf.completeExceptionally(new TimeoutException()),
+    5, TimeUnit.SECONDS);
+return cf;</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">return fetchAsync()
+    .orTimeout(5, TimeUnit.SECONDS);
+// Completes exceptionally with TimeoutException after 5 s</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="concurrency">
+    <div class="ba-header"><span class="ba-title">CompletableFuture.completeOnTimeout</span><span class="badge added">Java 9</span><span class="ba-cat">Concurrency</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Same scheduler complexity as orTimeout,
+// but completing with a fallback value instead of exception</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">return fetchUserScore(id)
+    .completeOnTimeout(0, 3, TimeUnit.SECONDS);
+// Returns 0 (default) if not complete within 3 s
+// Unlike orTimeout — no exception thrown</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="tooling">
+    <div class="ba-header"><span class="ba-title">StackWalker — lazy stack inspection</span><span class="badge added">Java 9</span><span class="ba-cat">Tooling / JVM</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Allocates the entire stack trace array immediately
+StackTraceElement[] frames =
+    Thread.currentThread().getStackTrace();
+String callerClass = frames[2].getClassName();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Lazy — walks only as many frames as needed
+String callerClass = StackWalker.getInstance()
+    .walk(frames -&gt; frames
+        .skip(1).findFirst()
+        .map(StackWalker.StackFrame::getClassName)
+        .orElse("unknown"));
+// Also: StackWalker.getInstance(RETAIN_CLASS_REFERENCE)</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 259 — <code>StackWalker</code> is significantly faster when you only need the top N frames, and enables filtering/mapping without allocating the full array.</p>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="tooling">
+    <div class="ba-header"><span class="ba-title">ProcessHandle API</span><span class="badge added">Java 9</span><span class="ba-cat">Tooling / JVM</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// No standard way to get the current process PID
+// (had to use reflection or /proc hacks)
+// Process had no info about children/parent</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Current JVM process
+ProcessHandle self = ProcessHandle.current();
+System.out.println("PID: " + self.pid());
+
+// Spawned process info
+Process p = new ProcessBuilder("ps","aux").start();
+p.toHandle().onExit().thenAccept(ph -&gt;
+    System.out.println("Exit: " + ph.pid()));
+
+// Enumerate all children
+self.children().forEach(c -&gt;
+    System.out.println("child: " + c.pid()));</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 102 — <code>ProcessHandle</code> exposes PID, command, start time, parent, children, and an <code>onExit()</code> CompletableFuture.</p>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 10 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="10" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Local-variable type inference — var</span><span class="badge added">Java 10</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">HashMap&lt;String, List&lt;Employee&gt;&gt; byDept =
     new HashMap&lt;String, List&lt;Employee&gt;&gt;();
 
-Iterator&lt;Map.Entry&lt;String, List&lt;Employee&gt;&gt;&gt; it =
-    byDept.entrySet().iterator();</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">var byDept = new HashMap&lt;String, List&lt;Employee&gt;&gt;();
-var it = byDept.entrySet().iterator();
+for (Map.Entry&lt;String, List&lt;Employee&gt;&gt; entry :
+        byDept.entrySet()) {
+    List&lt;Employee&gt; team = entry.getValue();
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">var byDept = new HashMap&lt;String, List&lt;Employee&gt;&gt;();
 
+for (var entry : byDept.entrySet()) {
+    var team = entry.getValue();
+}
 // Still statically typed — compiler infers the type.
-// Only for local variables; not fields or parameters.</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 286 — <code>var</code> works where the type is obvious from the right-hand side. Use it to reduce boilerplate; avoid it when clarity suffers.</p>
+// Only for local variables; not fields or parameters.</code></pre></div>
     </div>
+    <p class="ba-note">JEP 286 — use <code>var</code> when the type is obvious from the RHS. Avoid when the inferred type is surprising or abstract.</p>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 11 ═══════════════════════════════ -->
+  <div class="ba-card" data-ver="10" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">List.copyOf / Set.copyOf / Map.copyOf</span><span class="badge added">Java 10</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Defensive immutable copy
+List&lt;String&gt; safe =
+    Collections.unmodifiableList(new ArrayList&lt;&gt;(mutable));
+Set&lt;String&gt;  safeSet =
+    Collections.unmodifiableSet(new HashSet&lt;&gt;(mutableSet));</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;String&gt; safe    = List.copyOf(mutable);
+Set&lt;String&gt;  safeSet = Set.copyOf(mutableSet);
+Map&lt;K,V&gt;    safeMap = Map.copyOf(mutableMap);
+// Null elements/keys/values throw NullPointerException</code></pre></div>
+    </div>
+  </div>
 
-    <div class="ba-card" data-ver="11" data-cat="api">
-      <div class="ba-header">
-        <span class="ba-title">New String methods</span>
-        <span class="badge added">Java 11</span>
-        <span class="ba-cat">API</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">String s = "  hello world  ";
-String trimmed = s.trim();         // doesn't handle Unicode whitespace
-boolean blank = trimmed.length() == 0;
+  <div class="ba-card" data-ver="10" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">Collectors.toUnmodifiableList / Set / Map</span><span class="badge added">Java 10</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">List&lt;String&gt; names = employees.stream()
+    .map(Employee::name)
+    .collect(Collectors.collectingAndThen(
+        Collectors.toList(),
+        Collections::unmodifiableList));</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;String&gt; names = employees.stream()
+    .map(Employee::name)
+    .collect(Collectors.toUnmodifiableList());
+// Also: toUnmodifiableSet(), toUnmodifiableMap(k, v)</code></pre></div>
+    </div>
+    <p class="ba-note">Note: In Java 16+, prefer <code>.toList()</code> terminal directly on the stream — even shorter.</p>
+  </div>
+
+  <div class="ba-card" data-ver="10" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Optional.orElseThrow() — zero-arg</span><span class="badge added">Java 10</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Must provide a supplier even for the default exception
+User user = findUser(id)
+    .orElseThrow(() -&gt; new NoSuchElementException());</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Zero-arg: throws NoSuchElementException automatically
+User user = findUser(id).orElseThrow();
+// Still use the 1-arg version for a descriptive message:
+User user2 = findUser(id)
+    .orElseThrow(() -&gt; new UserNotFoundException(id));</code></pre></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 11 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="11" data-cat="language">
+    <div class="ba-header"><span class="ba-title">var in lambda parameters (enables annotations)</span><span class="badge added">Java 11</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Could not add annotation to inferred lambda params
+list.stream()
+    .map((String s) -&gt; s.trim())       // explicit type needed for @
+    .filter((String s) -&gt; !s.isEmpty())</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">list.stream()
+    .map((@NonNull var s) -&gt; s.trim())   // annotation + inference
+    .filter((@NonNull var s) -&gt; !s.isEmpty())
+// All params must use var (or none) — can't mix</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 323 — the main use case is adding annotations (e.g. <code>@Nullable</code>, <code>@NonNull</code>) to lambda parameters without writing out the full type.</p>
+  </div>
+
+  <div class="ba-card" data-ver="11" data-cat="api">
+    <div class="ba-header"><span class="ba-title">String.isBlank — whitespace check</span><span class="badge added">Java 11</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// trim() is ASCII-only; isEmpty() misses whitespace
+boolean blank = s.trim().isEmpty();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">boolean blank = s.isBlank();
+// true for "" and for any all-whitespace string
+// Uses Unicode whitespace definition (same as strip)</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="11" data-cat="api">
+    <div class="ba-header"><span class="ba-title">String.strip — Unicode-aware whitespace removal</span><span class="badge added">Java 11</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// trim() only removes chars &lt;= ' ' (ASCII control)
+// Misses non-breaking space (' '), ideographic space, etc.
+String clean = s.trim();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String clean = s.strip();           // both ends
+String left  = s.stripLeading();    // leading only
+String right = s.stripTrailing();   // trailing only
+// Uses Character.isWhitespace() — full Unicode coverage</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="11" data-cat="api">
+    <div class="ba-header"><span class="ba-title">String.repeat</span><span class="badge added">Java 11</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String divider = "";
+for (int i = 0; i &lt; 60; i++) divider += "-";
+
+// Or with StringBuilder:
+StringBuilder sb = new StringBuilder();
+for (int i = 0; i &lt; 3; i++) sb.append("ho ");
+String laugh = sb.toString();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String divider = "-".repeat(60);
+String laugh   = "ho ".repeat(3);  // "ho ho ho "
+// repeat(0) returns "" — not an error</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="11" data-cat="api">
+    <div class="ba-header"><span class="ba-title">String.lines() — stream of lines</span><span class="badge added">Java 11</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// split("\n") misses \r\n and produces empty last element
 String[] lines = content.split("\n");
-String rep = "";
-for (int i = 0; i &lt; 3; i++) rep += "ha";</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">String s = "  hello world  ";
-String stripped = s.strip();        // Unicode-aware
-boolean blank    = s.isBlank();     // true if empty or whitespace
-Stream&lt;String&gt; lines = content.lines();
-String rep = "ha".repeat(3);        // "hahaha"
-String indented = s.stripLeading(); // left-strip only</code></pre>
-        </div>
-      </div>
+for (String line : lines) {
+    if (!line.trim().isEmpty()) process(line);
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">content.lines()                       // handles \n \r \r\n
+    .map(String::strip)
+    .filter(Predicate.not(String::isBlank))
+    .forEach(this::process);
+// Lazy stream — no array allocated upfront</code></pre></div>
     </div>
+  </div>
 
-    <div class="ba-card" data-ver="11" data-cat="api">
-      <div class="ba-header">
-        <span class="ba-title">Files.readString / writeString</span>
-        <span class="badge added">Java 11</span>
-        <span class="ba-cat">API</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">String content = new String(
-    Files.readAllBytes(Paths.get("data.txt")),
+  <div class="ba-card" data-ver="11" data-cat="api">
+    <div class="ba-header"><span class="ba-title">Files.readString / writeString</span><span class="badge added">Java 11</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String content = new String(
+    Files.readAllBytes(Paths.get("config.json")),
     StandardCharsets.UTF_8);
 
-Files.write(
-    Paths.get("out.txt"),
-    result.getBytes(StandardCharsets.UTF_8));</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">String content =
-    Files.readString(Path.of("data.txt"));
+Files.write(Paths.get("out.txt"),
+    result.getBytes(StandardCharsets.UTF_8));</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String content = Files.readString(Path.of("config.json"));
+// Defaults to UTF-8; pass Charset as 2nd arg to override
 
 Files.writeString(Path.of("out.txt"), result);
-
-// Uses UTF-8 by default; pass Charset as 3rd arg to override</code></pre>
-        </div>
-      </div>
+// Or append: Files.writeString(path, text, APPEND)</code></pre></div>
     </div>
+  </div>
 
-    <div class="ba-card" data-ver="11" data-cat="api">
-      <div class="ba-header">
-        <span class="ba-title">HttpClient (standard)</span>
-        <span class="badge added">Java 11</span>
-        <span class="ba-cat">API</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">URL url = new URL("https://api.example.com/data");
+  <div class="ba-card" data-ver="11" data-cat="api">
+    <div class="ba-header"><span class="ba-title">Path.of — preferred path factory</span><span class="badge added">Java 11</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">Path p1 = Paths.get("etc", "app", "config.yml");
+Path p2 = Paths.get(System.getenv("HOME"), ".ssh", "id_rsa");</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">Path p1 = Path.of("etc", "app", "config.yml");
+Path p2 = Path.of(System.getenv("HOME"), ".ssh", "id_rsa");
+// Path.of is the preferred API; Paths.get now delegates to it</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="11" data-cat="api">
+    <div class="ba-header"><span class="ba-title">HttpClient — synchronous GET</span><span class="badge added">Java 11</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">URL url = new URL("https://api.example.com/data");
 HttpURLConnection conn =
     (HttpURLConnection) url.openConnection();
 conn.setRequestMethod("GET");
@@ -365,272 +666,527 @@ try (var r = new BufferedReader(
     StringBuilder sb = new StringBuilder();
     String line;
     while ((line = r.readLine()) != null) sb.append(line);
-    System.out.println(sb);
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">HttpClient client = HttpClient.newHttpClient();
-HttpRequest req = HttpRequest.newBuilder()
+    return sb.toString();
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">var client = HttpClient.newHttpClient();
+var request = HttpRequest.newBuilder()
     .uri(URI.create("https://api.example.com/data"))
     .GET().build();
-HttpResponse&lt;String&gt; res =
-    client.send(req, BodyHandlers.ofString());
-System.out.println(res.body());
-
-// Also supports async: client.sendAsync(req, ...)</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 321 — supports HTTP/1.1, HTTP/2, WebSockets and async out of the box. Replaces the old <code>HttpURLConnection</code>.</p>
+HttpResponse&lt;String&gt; response =
+    client.send(request, BodyHandlers.ofString());
+return response.body();</code></pre></div>
     </div>
+    <p class="ba-note">JEP 321 — supports HTTP/1.1, HTTP/2 and WebSockets out of the box. Reuse the client across requests (it's thread-safe).</p>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 14 ═══════════════════════════════ -->
+  <div class="ba-card" data-ver="11" data-cat="api">
+    <div class="ba-header"><span class="ba-title">HttpClient — asynchronous request</span><span class="badge added">Java 11</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Async HTTP required external libraries (OkHttp, Apache HC)
+// or complex Executor + HttpURLConnection wiring</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">var client = HttpClient.newHttpClient();
+CompletableFuture&lt;String&gt; body = client
+    .sendAsync(request, BodyHandlers.ofString())
+    .thenApply(HttpResponse::body);
 
-    <div class="ba-card" data-ver="14" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Switch expressions</span>
-        <span class="badge added">Java 14</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">int numDays;
+// Fan out multiple requests concurrently:
+List&lt;CompletableFuture&lt;String&gt;&gt; futures = urls.stream()
+    .map(url -&gt; client.sendAsync(
+        HttpRequest.newBuilder().uri(url).build(),
+        BodyHandlers.ofString())
+        .thenApply(HttpResponse::body))
+    .toList();</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="11" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Predicate.not — negate method references</span><span class="badge added">Java 11</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">List&lt;String&gt; nonBlank = lines.stream()
+    .filter(s -&gt; !s.isBlank())    // lambda needed just to negate
+    .toList();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;String&gt; nonBlank = lines.stream()
+    .filter(Predicate.not(String::isBlank))  // method reference works
+    .toList();
+// Works with any boolean method:
+list.stream().filter(Predicate.not(Optional::isEmpty))</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="11" data-cat="tooling">
+    <div class="ba-header"><span class="ba-title">Launch single-file source programs</span><span class="badge added">Java 11</span><span class="ba-cat">Tooling / JVM</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="bash"># Two steps, leaves a .class file behind
+$ javac Hello.java
+$ java Hello</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="bash"># One step, no .class file created
+$ java Hello.java
+
+# Works with shebang on Unix:
+#!/usr/bin/java --source 17
+// ... rest of file is valid Java</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 330 — ideal for scripts and quick prototypes. The source file is compiled in-memory; full Java features still available.</p>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 12 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="12" data-cat="api">
+    <div class="ba-header"><span class="ba-title">String.indent</span><span class="badge added">Java 12</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String indented = Arrays.stream(text.split("\n"))
+    .map(line -&gt; "    " + line)
+    .collect(Collectors.joining("\n"));</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String indented = text.indent(4);    // add 4 spaces per line
+String dedented = text.indent(-2);   // remove up to 2 spaces
+// Adds trailing newline if missing; normalises line endings</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="12" data-cat="api">
+    <div class="ba-header"><span class="ba-title">String.transform — fluent transformation chain</span><span class="badge added">Java 12</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String result = input;
+result = result.trim();
+result = result.toUpperCase();
+result = result + "_PROCESSED";
+// Temporary variables clutter the method</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String result = input
+    .transform(String::trim)
+    .transform(String::toUpperCase)
+    .transform(s -&gt; s + "_PROCESSED");
+// Return type can differ — transform(s -> s.length()) gives Integer</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="12" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">Collectors.teeing — two collectors, one pass</span><span class="badge added">Java 12</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Two separate stream passes to compute average
+long count = numbers.stream().count();
+double sum = numbers.stream()
+    .mapToDouble(Integer::doubleValue).sum();
+double avg = sum / count;</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">double avg = numbers.stream().collect(
+    Collectors.teeing(
+        Collectors.summingDouble(Integer::doubleValue),
+        Collectors.counting(),
+        (sum, count) -&gt; sum / count
+    ));
+// Single pass; two downstream collectors merged by BiFunction</code></pre></div>
+    </div>
+    <p class="ba-note">Useful whenever you need two aggregations simultaneously: min+max, sum+count, partition+count, etc.</p>
+  </div>
+
+  <div class="ba-card" data-ver="12" data-cat="api">
+    <div class="ba-header"><span class="ba-title">Files.mismatch — compare file content</span><span class="badge added">Java 12</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">byte[] a = Files.readAllBytes(path1);
+byte[] b = Files.readAllBytes(path2);
+long pos = -1;
+for (int i = 0; i &lt; Math.min(a.length, b.length); i++) {
+    if (a[i] != b[i]) { pos = i; break; }
+}
+// Both files fully loaded into memory</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">long pos = Files.mismatch(path1, path2);
+// -1 if files are identical
+// Otherwise: byte index of first difference
+// Streams the files — no full load into memory</code></pre></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 14 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="14" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Switch expressions</span><span class="badge added">Java 14</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">int numDays;
 switch (month) {
     case JANUARY: case MARCH: case MAY:
-    case JULY: case AUGUST: case OCTOBER:
+    case JULY:    case AUGUST: case OCTOBER:
     case DECEMBER:
         numDays = 31; break;
     case FEBRUARY:
-        numDays = year % 4 == 0 ? 29 : 28; break;
+        numDays = isLeap ? 29 : 28; break;
     default:
         numDays = 30;
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">int numDays = switch (month) {
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">int numDays = switch (month) {
     case JANUARY, MARCH, MAY,
-         JULY, AUGUST, OCTOBER,
-         DECEMBER              -&gt; 31;
-    case FEBRUARY              -&gt; year % 4 == 0 ? 29 : 28;
-    default                    -&gt; 30;
+         JULY, AUGUST, OCTOBER, DECEMBER -&gt; 31;
+    case FEBRUARY -&gt; isLeap ? 29 : 28;
+    default       -&gt; 30;
 };
-// Expression — result assigned directly, no break needed</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 361 — the <code>-&gt;</code> arm never falls through. Use <code>yield</code> inside a block arm when multiple statements are needed before the result.</p>
+// Arrow arms never fall through; result is an expression</code></pre></div>
     </div>
+    <p class="ba-note">JEP 361 — use <code>yield value;</code> inside a block arm when multiple statements are needed before returning the result.</p>
+  </div>
 
-    <div class="ba-card" data-ver="14" data-cat="jvm">
-      <div class="ba-header">
-        <span class="ba-title">Helpful NullPointerExceptions</span>
-        <span class="badge added">Java 14</span>
-        <span class="ba-cat">JVM</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">// NPE at order.customer.address.getCity()
+  <div class="ba-card" data-ver="14" data-cat="tooling">
+    <div class="ba-header"><span class="ba-title">Helpful NullPointerExceptions</span><span class="badge added">Java 14</span><span class="ba-cat">Tooling / JVM</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// NPE in: order.customer.address.getCity()
 Exception in thread "main"
   java.lang.NullPointerException
     at Shop.processOrder(Shop.java:42)
-// Which reference was null? Must debug manually.</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">Exception in thread "main"
+// Which reference was null? Must add debug prints or use debugger</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">Exception in thread "main"
   java.lang.NullPointerException:
   Cannot invoke "Address.getCity()" because
   "order.customer.address" is null
     at Shop.processOrder(Shop.java:42)
-// Pinpoints the exact null reference — zero guessing.</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 358 — enabled by default since Java 14. Flag: <code>-XX:+ShowCodeDetailsInExceptionMessages</code> (on by default in 14+).</p>
+// Pinpoints the exact null reference in the chain</code></pre></div>
     </div>
+    <p class="ba-note">JEP 358 — on by default since Java 14. Powered by <code>-XX:+ShowCodeDetailsInExceptionMessages</code> (default on).</p>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 15 ═══════════════════════════════ -->
+  <!-- ══════════════════════════ JAVA 15 ══════════════════════════ -->
 
-    <div class="ba-card" data-ver="15" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Text blocks</span>
-        <span class="badge added">Java 15</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">String json = "{\n" +
+  <div class="ba-card" data-ver="15" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Text blocks</span><span class="badge added">Java 15</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String json = "{\n" +
     "  \"name\": \"Alice\",\n" +
-    "  \"age\": 30\n" +
+    "  \"role\": \"admin\"\n" +
     "}";
-
-String sql = "SELECT id, name\n" +
+String sql =
+    "SELECT id, name\n" +
     "FROM users\n" +
-    "WHERE active = true";</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">String json = """
+    "WHERE active = true\n" +
+    "ORDER BY name";</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String json = """
         {
           "name": "Alice",
-          "age": 30
+          "role": "admin"
         }
         """;
-
 String sql = """
         SELECT id, name
         FROM users
         WHERE active = true
-        """;</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 378 — indentation is stripped relative to the closing <code>"""</code>. No need to escape double quotes inside the block.</p>
+        ORDER BY name
+        """;</code></pre></div>
     </div>
+    <p class="ba-note">JEP 378 — indentation stripped relative to the closing <code>"""</code>. No need to escape double-quotes inside the block.</p>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 16 ═══════════════════════════════ -->
+  <div class="ba-card" data-ver="15" data-cat="api">
+    <div class="ba-header"><span class="ba-title">String.formatted — fluent String.format</span><span class="badge added">Java 15</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String msg = String.format(
+    "Hello, %s! You have %d messages.", name, count);
+String url = String.format(
+    "https://%s:%d/api/%s", host, port, path);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String msg = "Hello, %s! You have %d messages."
+    .formatted(name, count);
+String url = "https://%s:%d/api/%s"
+    .formatted(host, port, path);
+// Template stays with the values — easier to read</code></pre></div>
+    </div>
+  </div>
 
-    <div class="ba-card" data-ver="16" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Records</span>
-        <span class="badge added">Java 16</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">class Point {
+  <!-- ══════════════════════════ JAVA 16 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="16" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Records — concise data classes</span><span class="badge added">Java 16</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">class Point {
     private final int x, y;
     Point(int x, int y) { this.x = x; this.y = y; }
     int x() { return x; }
     int y() { return y; }
-    @Override public boolean equals(Object o) { /* ... */ }
-    @Override public int hashCode() { /* ... */ }
-    @Override public String toString() {
-        return "Point[" + x + ", " + y + "]";
-    }
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">record Point(int x, int y) {}
+    @Override public boolean equals(Object o) { /*...*/ }
+    @Override public int hashCode()          { /*...*/ }
+    @Override public String toString()       { /*...*/ }
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">record Point(int x, int y) {}
 
-// Constructor, accessors (x(), y()), equals,
-// hashCode, toString — all auto-generated.
-// Immutable by default; components are final.</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 395 — ideal for DTOs, value objects and stream pipeline elements. Add a compact constructor to validate: <code>record Range(int lo, int hi) { Range { if (lo > hi) throw ... } }</code></p>
+// Auto-generated: constructor, x(), y(),
+// equals, hashCode, toString.
+// Components are final — records are immutable.</code></pre></div>
     </div>
+    <p class="ba-note">JEP 395 — ideal for DTOs, value objects and stream elements. Implement interfaces; add static/instance methods; can't extend other classes.</p>
+  </div>
 
-    <div class="ba-card" data-ver="16" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Pattern matching for instanceof</span>
-        <span class="badge added">Java 16</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">if (obj instanceof String) {
-    String s = (String) obj;   // redundant cast
+  <div class="ba-card" data-ver="16" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Records — compact canonical constructor</span><span class="badge added">Java 16</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">class Range {
+    private final int lo, hi;
+    Range(int lo, int hi) {
+        if (lo &gt; hi) throw new IllegalArgumentException();
+        this.lo = lo; this.hi = hi;
+    }
+    // + getters, equals, hashCode, toString...
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">record Range(int lo, int hi) {
+    Range {                           // compact constructor
+        if (lo &gt; hi) throw new IllegalArgumentException();
+        // fields are assigned automatically after this block
+    }
+}</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="16" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Local records inside methods</span><span class="badge added">Java 16</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Needed a private static class just to hold two values
+private static class ScoredName {
+    final String name; final int score;
+    ScoredName(String n, int s) { name=n; score=s; }
+}
+List&lt;ScoredName&gt; ranked = data.stream()
+    .map(d -&gt; new ScoredName(d.name(), compute(d)))
+    .sorted(Comparator.comparingInt(s -&gt; s.score))
+    .toList();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Declare record inline inside the method
+record ScoredName(String name, int score) {}
+
+List&lt;ScoredName&gt; ranked = data.stream()
+    .map(d -&gt; new ScoredName(d.name(), compute(d)))
+    .sorted(Comparator.comparingInt(ScoredName::score))
+    .toList();</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="16" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Pattern matching for instanceof</span><span class="badge added">Java 16</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">if (obj instanceof String) {
+    String s = (String) obj;     // redundant cast
     System.out.println(s.toUpperCase());
 }
-
 if (shape instanceof Circle) {
     Circle c = (Circle) shape;
-    draw(c.radius());
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">if (obj instanceof String s) {
-    System.out.println(s.toUpperCase());
+    render(c.radius());
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">if (obj instanceof String s) {
+    System.out.println(s.toUpperCase()); // s in scope, no cast
 }
-
 if (shape instanceof Circle c) {
-    draw(c.radius());
+    render(c.radius());
 }
-// s and c are in scope and already cast — no extra line</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 394 — the pattern variable is scoped to the true branch. Combine with <code>&amp;&amp;</code>: <code>if (obj instanceof String s &amp;&amp; !s.isBlank())</code></p>
+// Also: if (obj instanceof String s &amp;&amp; !s.isBlank())</code></pre></div>
     </div>
+    <p class="ba-note">JEP 394 — pattern variable scoped to the true branch. Combine with <code>&amp;&amp;</code> for guard conditions in the same expression.</p>
+  </div>
 
-    <div class="ba-card" data-ver="16" data-cat="api">
-      <div class="ba-header">
-        <span class="ba-title">Stream.toList()</span>
-        <span class="badge added">Java 16</span>
-        <span class="ba-cat">API</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">List&lt;String&gt; names = people.stream()
+  <div class="ba-card" data-ver="16" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">Stream.toList() — unmodifiable terminal</span><span class="badge added">Java 16</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">List&lt;String&gt; names = people.stream()
     .map(Person::name)
-    .collect(Collectors.toUnmodifiableList());</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">List&lt;String&gt; names = people.stream()
+    .collect(Collectors.toUnmodifiableList());</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;String&gt; names = people.stream()
     .map(Person::name)
     .toList();
-// Terminal method; returns an unmodifiable List.
-// Use Collectors.toList() if you need a mutable list.</code></pre>
-        </div>
-      </div>
+// Shorter; returns an unmodifiable List.
+// Use Collectors.toList() if you need a mutable result.</code></pre></div>
     </div>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 17 ═══════════════════════════════ -->
+  <div class="ba-card" data-ver="16" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Stream.mapMulti — push-based flatMap</span><span class="badge added">Java 16</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// flatMap always wraps result in a Stream — allocation per element
+list.stream()
+    .flatMap(n -&gt; n % 2 == 0
+        ? Stream.of(n, n * 10)
+        : Stream.empty())
+    .forEach(System.out::println);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// mapMulti: push values via Consumer — no intermediate Stream
+list.stream()
+    .&lt;Integer&gt;mapMulti((n, push) -&gt; {
+        if (n % 2 == 0) {
+            push.accept(n);
+            push.accept(n * 10);
+        }
+    })
+    .forEach(System.out::println);</code></pre></div>
+    </div>
+    <p class="ba-note">More efficient when emitting 0 or 1 element per input — avoids allocating a <code>Stream</code> object for every element. Useful for conditional expansion.</p>
+  </div>
 
-    <div class="ba-card" data-ver="17" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Sealed classes</span>
-        <span class="badge added">Java 17</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">// Anyone can extend Vehicle anywhere in the codebase
+  <!-- ══════════════════════════ JAVA 17 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="17" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Sealed classes — controlled inheritance</span><span class="badge added">Java 17</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Anyone anywhere can extend Vehicle
 abstract class Vehicle {}
 class Car   extends Vehicle {}
 class Truck extends Vehicle {}
-// switch on Vehicle needs a default — can't be exhaustive</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">sealed interface Vehicle permits Car, Truck, Van {}
-record Car(String model)   implements Vehicle {}
-record Truck(int payload)  implements Vehicle {}
-record Van(int seats)      implements Vehicle {}
+// switch on Vehicle needs a default — can't be exhaustive</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">sealed interface Vehicle permits Car, Truck, Van {}
+record Car(String model)  implements Vehicle {}
+record Truck(int payload) implements Vehicle {}
+record Van(int seats)     implements Vehicle {}
 
-// Pattern switch can now be exhaustive — no default needed
 double tax(Vehicle v) {
-    return switch (v) {
-        case Car c   -&gt; 0.1 * c.price();
-        case Truck t -&gt; 0.2 * t.payload();
-        case Van va  -&gt; 0.15 * va.seats();
+    return switch (v) {           // exhaustive — no default needed
+        case Car   c -&gt; 0.1  * c.price();
+        case Truck t -&gt; 0.2  * t.payload();
+        case Van   va -&gt; 0.15 * va.seats();
     };
-}</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 409 — the <code>permits</code> clause is inferred when permitted classes are in the same file. Works with interfaces and abstract classes.</p>
+}</code></pre></div>
     </div>
+    <p class="ba-note">JEP 409 — <code>permits</code> can be omitted when all implementations are in the same file. Works with abstract classes too.</p>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 21 ═══════════════════════════════ -->
+  <div class="ba-card" data-ver="17" data-cat="api">
+    <div class="ba-header"><span class="ba-title">HexFormat — hex encoding / decoding</span><span class="badge added">Java 17</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Encode bytes to hex string
+StringBuilder sb = new StringBuilder();
+for (byte b : bytes)
+    sb.append(String.format("%02x", b));
+String hex = sb.toString();
 
-    <div class="ba-card" data-ver="21" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Pattern matching for switch</span>
-        <span class="badge added">Java 21</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">String describe(Object obj) {
+// Decode — error-prone
+byte[] decoded =
+    new BigInteger(hex, 16).toByteArray();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">HexFormat hf = HexFormat.of();
+String hex     = hf.formatHex(bytes);   // "deadbeef..."
+byte[] decoded = hf.parseHex(hex);
+
+// Customise delimiter and case:
+HexFormat mac = HexFormat.ofDelimiter(":").withUpperCase();
+String addr   = mac.formatHex(macBytes); // "DE:AD:BE:EF"</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 378 (Java 17) — replaces ad-hoc hex formatting. Thread-safe and allocation-efficient.</p>
+  </div>
+
+  <div class="ba-card" data-ver="17" data-cat="api">
+    <div class="ba-header"><span class="ba-title">RandomGenerator — algorithm-agnostic RNG</span><span class="badge added">Java 17</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Tightly coupled to Random; swapping algorithm
+// required changing the type everywhere
+Random rng = new Random(seed);
+int n = rng.nextInt(100);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Abstract over algorithm
+RandomGenerator rng = RandomGeneratorFactory
+    .of("L64X128MixRandom").create(seed);
+int n = rng.nextInt(100);
+
+// Stream support:
+rng.ints(10, 0, 100).forEach(System.out::println);
+rng.doubles(5).forEach(System.out::println);
+
+// Or just: RandomGenerator.getDefault()</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 356 — a common interface for all JDK RNG implementations. All variants support <code>ints()</code>, <code>longs()</code>, <code>doubles()</code> streams.</p>
+  </div>
+
+  <div class="ba-card" data-ver="17" data-cat="api">
+    <div class="ba-header"><span class="ba-title">InstantSource — testable clock abstraction</span><span class="badge added">Java 17</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">class InvoiceService {
+    // Hard-coded to wall clock — can't control in tests
+    Instant now() { return Instant.now(); }
+}
+// Tests that check timestamps are inherently flaky</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">class InvoiceService {
+    private final InstantSource clock;
+    InvoiceService(InstantSource clock) { this.clock = clock; }
+    Instant now() { return clock.instant(); }
+}
+// Production: InstantSource.system()
+// Tests: InstantSource.fixed(someInstant)</code></pre></div>
+    </div>
+    <p class="ba-note">A lighter alternative to <code>Clock</code> when you only need <code>Instant</code>. Inject it and your time-dependent code becomes deterministically testable.</p>
+  </div>
+
+  <div class="ba-card" data-ver="17" data-cat="api">
+    <div class="ba-header"><span class="ba-title">Random number streams</span><span class="badge added">Java 17</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">List&lt;Integer&gt; samples = new ArrayList&lt;&gt;();
+Random rng = new Random();
+for (int i = 0; i &lt; 10; i++)
+    samples.add(rng.nextInt(100));</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// All RandomGenerator impls expose stream methods
+List&lt;Integer&gt; samples = new Random()
+    .ints(10, 0, 100)   // count, origin (inclusive), bound (exclusive)
+    .boxed()
+    .toList();
+
+// Unlimited stream:
+new Random().doubles().limit(5).forEach(System.out::println);</code></pre></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 18 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="18" data-cat="api">
+    <div class="ba-header"><span class="ba-title">UTF-8 as the default charset</span><span class="badge added">Java 18</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// FileReader/Writer used the platform's default charset.
+// On Windows this was often Cp1252, on Linux UTF-8 —
+// same code, different behaviour across environments.
+FileWriter w = new FileWriter("out.txt"); // could be Cp1252!</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Java 18+: UTF-8 is the default everywhere
+FileWriter w = new FileWriter("out.txt"); // always UTF-8
+
+// If you explicitly need something else:
+FileWriter w2 =
+    new FileWriter("out.txt", Charset.forName("ISO-8859-1"));</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 400 — eliminates a classic "works on my machine" bug. Check for code that relied on the old platform default before upgrading.</p>
+  </div>
+
+  <div class="ba-card" data-ver="18" data-cat="tooling">
+    <div class="ba-header"><span class="ba-title">@snippet tag in Javadoc</span><span class="badge added">Java 18</span><span class="ba-cat">Tooling / JVM</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">/**
+ * Usage example:
+ * &lt;pre&gt;{@code
+ * List&lt;String&gt; list = new ArrayList&lt;&gt;();
+ * list.add("item");
+ * }&lt;/pre&gt;
+ * Code lives in comments — not compiled, can go stale.
+ */</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">/**
+ * Usage example:
+ * {@snippet class="UsageExamples" region="addItem"}
+ * Code lives in a real .java file — compiled &amp; never stale.
+ */
+
+// In UsageExamples.java:
+// @start region="addItem"
+List&lt;String&gt; list = new ArrayList&lt;&gt;();
+list.add("item");
+// @end</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 413 — <code>@snippet</code> references real source kept in a <code>snippet-files</code> directory. Examples compile and can be tested.</p>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 19 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="19" data-cat="concurrency">
+    <div class="ba-header"><span class="ba-title">ExecutorService implements AutoCloseable</span><span class="badge added">Java 19</span><span class="ba-cat">Concurrency</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">ExecutorService exec = Executors.newFixedThreadPool(4);
+try {
+    exec.submit(task1);
+    exec.submit(task2);
+} finally {
+    exec.shutdown();
+    exec.awaitTermination(1, TimeUnit.MINUTES);
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">try (ExecutorService exec = Executors.newFixedThreadPool(4)) {
+    exec.submit(task1);
+    exec.submit(task2);
+}   // close() calls shutdown() + awaitTermination automatically</code></pre></div>
+    </div>
+    <p class="ba-note"><code>ExecutorService</code> now implements <code>AutoCloseable</code>. Works with virtual thread executors too: <code>Executors.newVirtualThreadPerTaskExecutor()</code>.</p>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 21 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="21" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Pattern matching for switch</span><span class="badge added">Java 21</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String describe(Object obj) {
     if (obj instanceof Integer i)
         return "int: " + i;
     if (obj instanceof String s)
@@ -638,11 +1194,8 @@ double tax(Vehicle v) {
     if (obj instanceof Double d)
         return "dbl: " + d;
     throw new IllegalArgumentException();
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">String describe(Object obj) {
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String describe(Object obj) {
     return switch (obj) {
         case Integer i -&gt; "int: " + i;
         case String s  -&gt; "str: " + s.toUpperCase();
@@ -650,296 +1203,557 @@ double tax(Vehicle v) {
         case null      -&gt; "null";
         default        -&gt; "unknown";
     };
-}</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 441 — add guards with <code>when</code>: <code>case String s when s.length() &gt; 10 -&gt; "long"</code>. Null handling is explicit — no more silent NPE in switch.</p>
+}</code></pre></div>
     </div>
+    <p class="ba-note">JEP 441 — exhaustiveness is checked at compile time for sealed types. Null arm is explicit — no more silent NPE in switch.</p>
+  </div>
 
-    <div class="ba-card" data-ver="21" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Record patterns</span>
-        <span class="badge added">Java 21</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">if (shape instanceof Circle) {
-    Circle c  = (Circle) shape;   // cast
-    double r  = c.radius();       // extract
+  <div class="ba-card" data-ver="21" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Guarded patterns — when clause</span><span class="badge added">Java 21</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String classify(Shape s) {
+    if (s instanceof Circle c) {
+        if (c.radius() &gt; 100) return "big circle";
+        return "small circle";
+    }
+    return "other";
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String classify(Shape s) {
+    return switch (s) {
+        case Circle c when c.radius() &gt; 100 -&gt; "big circle";
+        case Circle c                       -&gt; "small circle";
+        default                             -&gt; "other";
+    };
+}</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="21" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Record patterns — deconstruct in instanceof</span><span class="badge added">Java 21</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">if (shape instanceof Circle) {
+    Circle c = (Circle) shape;  // cast
+    double r = c.radius();      // extract
     System.out.printf("area=%.2f%n", Math.PI * r * r);
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">if (shape instanceof Circle(double r)) {
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">if (shape instanceof Circle(double r)) {
     System.out.printf("area=%.2f%n", Math.PI * r * r);
 }
 
-// Nested record deconstruction
+// Nested deconstruction:
 if (obj instanceof Rect(Point(int x, int y), Size(int w, int h))) {
     System.out.println("top-left=(" + x + "," + y + ")");
-}</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 440 — pattern deconstructs a record into its components in one step. Works in <code>switch</code> arms too.</p>
+}</code></pre></div>
     </div>
+    <p class="ba-note">JEP 440 — works in <code>switch</code> arms too. The compiler calls the record's accessor methods to extract components.</p>
+  </div>
 
-    <div class="ba-card" data-ver="21" data-cat="api">
-      <div class="ba-header">
-        <span class="ba-title">Sequenced collections</span>
-        <span class="badge added">Java 21</span>
-        <span class="ba-cat">API</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">List&lt;String&gt; list = new ArrayList&lt;&gt;(List.of("a","b","c"));
-String first = list.get(0);              // verbose index
-String last  = list.get(list.size()-1); // error-prone
+  <div class="ba-card" data-ver="21" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Exhaustive switch on sealed types</span><span class="badge added">Java 21</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">sealed interface Shape permits Circle, Rect {}
 
-// No standard "add to front" for List
-// LinkedHashMap had no last-entry accessor</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">List&lt;String&gt; list = new ArrayList&lt;&gt;(List.of("a","b","c"));
-String first = list.getFirst();   // SequencedCollection
+String name(Shape s) {
+    return switch (s) {
+        case Circle c -&gt; "circle";
+        case Rect r   -&gt; "rect";
+        default -&gt; "?";   // needed even though it's unreachable
+    };
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String name(Shape s) {
+    return switch (s) {
+        case Circle c -&gt; "circle";
+        case Rect r   -&gt; "rect";
+        // No default — compiler knows Circle + Rect is exhaustive
+    };
+}
+// Adding a new type to Shape causes a compile error here — safe!</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="21" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Null arm in switch</span><span class="badge added">Java 21</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">String process(String s) {
+    if (s == null) return "(null)";  // pre-check required
+    return switch (s) {
+        case "ok"  -&gt; "success";
+        case "err" -&gt; "failure";
+        default    -&gt; "unknown";
+    };
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String process(String s) {
+    return switch (s) {
+        case null  -&gt; "(null)";    // explicit null arm in switch
+        case "ok"  -&gt; "success";
+        case "err" -&gt; "failure";
+        default    -&gt; "unknown";
+    };
+}</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="21" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">Sequenced collections — getFirst / getLast</span><span class="badge added">Java 21</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">List&lt;String&gt; list = new ArrayList&lt;&gt;(List.of("a","b","c"));
+String first = list.get(0);
+String last  = list.get(list.size() - 1);  // verbose and error-prone
+
+// LinkedHashMap had no direct first/last key access</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;String&gt; list = new ArrayList&lt;&gt;(List.of("a","b","c"));
+String first = list.getFirst();   // SequencedCollection API
 String last  = list.getLast();
-list.addFirst("z");
+// Works on List, Deque, LinkedHashSet, LinkedHashMap</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 431 — adds <code>SequencedCollection</code>, <code>SequencedSet</code>, <code>SequencedMap</code>. Retrofitted to all ordered JDK collection types.</p>
+  </div>
+
+  <div class="ba-card" data-ver="21" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">Sequenced collections — addFirst / addLast</span><span class="badge added">Java 21</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// addFirst only existed on Deque/LinkedList, not on List
+LinkedList&lt;String&gt; history = new LinkedList&lt;&gt;();
+history.addFirst("page1");
+// For ArrayList there was no addFirst()!</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Works on ANY SequencedCollection — List, Deque, etc.
+List&lt;String&gt; history = new ArrayList&lt;&gt;();
+history.addFirst("page1");
+history.addLast("page2");
+history.removeFirst();
+history.reversed().forEach(System.out::println);</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="21" data-cat="collections">
+    <div class="ba-header"><span class="ba-title">reversed() — reverse view of any sequence</span><span class="badge added">Java 21</span><span class="ba-cat">Collections</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Reverse a list — modified the list in-place or required a copy
+List&lt;String&gt; copy = new ArrayList&lt;&gt;(list);
+Collections.reverse(copy);
+copy.forEach(System.out::println);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// reversed() returns a view — no copy, no mutation
 list.reversed().forEach(System.out::println);
 
-// Works on List, Deque, LinkedHashMap, LinkedHashSet</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 431 — adds <code>SequencedCollection</code>, <code>SequencedSet</code>, <code>SequencedMap</code> interfaces. Retrofit applied to existing JDK types.</p>
+// Also works on sorted maps:
+LinkedHashMap&lt;String,Integer&gt; map = new LinkedHashMap&lt;&gt;();
+map.reversed().entrySet().forEach(System.out::println);</code></pre></div>
     </div>
+  </div>
 
-    <div class="ba-card" data-ver="21" data-cat="concurrency">
-      <div class="ba-header">
-        <span class="ba-title">Virtual threads</span>
-        <span class="badge added">Java 21</span>
-        <span class="ba-cat">Concurrency</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">// 10,000 platform threads ≈ 10 GB of stack + OS overhead
+  <div class="ba-card" data-ver="21" data-cat="api">
+    <div class="ba-header"><span class="ba-title">Math.clamp — bound a value within a range</span><span class="badge added">Java 21</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">int clamped       = Math.min(max, Math.max(min, value));
+double brightness = Math.min(1.0, Math.max(0.0, raw));
+// Easy to get min/max order wrong</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">int    clamped    = Math.clamp(value, min, max);
+double brightness = Math.clamp(raw,   0.0, 1.0);
+// Works for int, long, float, double
+// Throws IllegalArgumentException if min &gt; max</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="21" data-cat="api">
+    <div class="ba-header"><span class="ba-title">String.splitWithDelimiters — keep the delimiters</span><span class="badge added">Java 21</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// split() discards delimiters
+String[] parts = "one, two, three".split(",\\s*");
+// ["one", "two", "three"] — commas gone</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">String[] parts =
+    "one, two, three".splitWithDelimiters(",\\s*", -1);
+// ["one", ", ", "two", ", ", "three"]
+// Useful when you need to re-join after modifying parts</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="21" data-cat="concurrency">
+    <div class="ba-header"><span class="ba-title">Virtual threads</span><span class="badge added">Java 21</span><span class="ba-cat">Concurrency</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// 10 000 platform threads ≈ 10 GB of stack + OS scheduling overhead
 ExecutorService pool = Executors.newFixedThreadPool(200);
 for (int i = 0; i &lt; 10_000; i++) {
     pool.submit(() -&gt; callExternalApi());
 }
-// Must size the pool carefully — too small = bottleneck</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">// 10,000 virtual threads ≈ a few MB total
+// Pool size must be tuned manually</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// 10 000 virtual threads ≈ a few MB total; JVM schedules them
 try (var exec = Executors.newVirtualThreadPerTaskExecutor()) {
     for (int i = 0; i &lt; 10_000; i++) {
         exec.submit(() -&gt; callExternalApi());
     }
-}  // waits for all tasks to finish
+}   // waits for all tasks, then closes
 
-// Or: Thread.ofVirtual().start(runnable);</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 444 — virtual threads are cheap enough to create one per task. They block without tying up a platform thread (the carrier unmounts on I/O blocking calls).</p>
+// One-off: Thread.ofVirtual().start(runnable);</code></pre></div>
     </div>
+    <p class="ba-note">JEP 444 — virtual threads block without tying up a carrier thread. Each blocking I/O call unmounts the virtual thread from its carrier automatically.</p>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 22 ═══════════════════════════════ -->
+  <div class="ba-card" data-ver="21" data-cat="concurrency">
+    <div class="ba-header"><span class="ba-title">Thread.sleep(Duration)</span><span class="badge added">Java 21</span><span class="ba-cat">Concurrency</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">Thread.sleep(2500);           // ms only; easy to confuse units
+Thread.sleep(0, 500_000_000); // nanos as 2nd arg — awkward</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">Thread.sleep(Duration.ofSeconds(2).plusMillis(500));
+Thread.sleep(Duration.ofMinutes(1));
+Thread.sleep(Duration.ofNanos(500_000_000));
+// Units are explicit and self-documenting</code></pre></div>
+    </div>
+  </div>
 
-    <div class="ba-card" data-ver="22" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Unnamed variables (_)</span>
-        <span class="badge added">Java 22</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">try {
-    int result = Integer.parseInt(input);
+  <!-- ══════════════════════════ JAVA 22 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="22" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Unnamed variables — _ for intentionally unused</span><span class="badge added">Java 22</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">try {
+    int n = Integer.parseInt(input);
 } catch (NumberFormatException e) {  // 'e' never used
     log.warn("Bad input: " + input);
 }
-
-for (String ignored : list) { counter++; }</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">try {
-    int result = Integer.parseInt(input);
+for (String ignored : list) { counter++; } // misleading name</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">try {
+    int n = Integer.parseInt(input);
 } catch (NumberFormatException _) {   // explicit: unused
     log.warn("Bad input: " + input);
 }
-
 for (String _ : list) { counter++; }
 
-// Also works in pattern switch arms:
-case Point(int x, int _) -&gt; "x=" + x;</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 456 — <code>_</code> signals "I need the binding syntactically but don't use the value". Keeps the code honest and avoids spurious unused-variable warnings.</p>
+// In patterns: case Point(int x, int _) -&gt; "x=" + x</code></pre></div>
     </div>
+    <p class="ba-note">JEP 456 — <code>_</code> signals "I need the binding syntactically but don't use the value." Prevents spurious unused-variable warnings.</p>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 24 ═══════════════════════════════ -->
+  <div class="ba-card" data-ver="22" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Unnamed patterns in switch arms</span><span class="badge added">Java 22</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">switch (event) {
+    case LoginEvent  e -&gt; log("login: "  + e.user());
+    case LogoutEvent e -&gt; log("logout"); // 'e' bound but unused
+    case ErrorEvent  e -&gt; log("error");  // same
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">switch (event) {
+    case LoginEvent  e -&gt; log("login: " + e.user());
+    case LogoutEvent _ -&gt; log("logout");  // _ = don't care
+    case ErrorEvent  _ -&gt; log("error");
+}</code></pre></div>
+    </div>
+  </div>
 
-    <div class="ba-card" data-ver="24" data-cat="api">
-      <div class="ba-header">
-        <span class="ba-title">Stream gatherers</span>
-        <span class="badge added">Java 24</span>
-        <span class="ba-cat">API</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">// Sliding window of 3 — no built-in; manual loop required
+  <div class="ba-card" data-ver="22" data-cat="api">
+    <div class="ba-header"><span class="ba-title">Foreign Function &amp; Memory API — Arena + MemorySegment</span><span class="badge added">Java 22</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// JNI: required .h file + .c glue + javah + System.loadLibrary
+// Extremely verbose; one error = SIGSEGV at runtime</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Pure Java — allocate off-heap memory safely
+try (Arena arena = Arena.ofConfined()) {
+    MemorySegment seg = arena.allocate(ValueLayout.JAVA_INT.byteSize() * 4);
+    seg.setAtIndex(ValueLayout.JAVA_INT, 0, 42);
+    int val = seg.getAtIndex(ValueLayout.JAVA_INT, 0);
+}   // memory freed automatically when Arena closes</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 454 — Arenas manage lifecycle; <code>ofConfined()</code> (single thread) vs <code>ofShared()</code> (multi-thread) vs <code>ofAuto()</code> (GC-managed). Use with <code>Linker</code> to call native functions.</p>
+  </div>
+
+  <div class="ba-card" data-ver="22" data-cat="tooling">
+    <div class="ba-header"><span class="ba-title">Multi-source file launcher</span><span class="badge added">Java 22</span><span class="ba-cat">Tooling / JVM</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="bash"># Had to compile all files first
+$ javac Main.java Helper.java Utils.java
+$ java Main</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="bash"># Launch directly — JVM compiles all source files
+$ java Main.java Helper.java Utils.java
+# Useful for scripts and educational demos with multiple classes</code></pre></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 23 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="23" data-cat="tooling">
+    <div class="ba-header"><span class="ba-title">Markdown in Javadoc comments</span><span class="badge added">Java 23</span><span class="ba-cat">Tooling / JVM</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">/**
+ * Finds the user by ID.
+ * &lt;p&gt;Throws {@link NoSuchUserException} if not found.&lt;/p&gt;
+ * &lt;ul&gt;
+ *   &lt;li&gt;Cached after first call&lt;/li&gt;
+ *   &lt;li&gt;Thread-safe&lt;/li&gt;
+ * &lt;/ul&gt;
+ * &lt;pre&gt;{@code User u = findUser(42L); }&lt;/pre&gt;
+ */</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">/// Finds the user by `id`.
+///
+/// Throws [NoSuchUserException] if not found.
+/// - Cached after first call
+/// - Thread-safe
+///
+/// ```java
+/// User u = findUser(42L);
+/// ```
+User findUser(long id);</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 467 — use <code>///</code> prefix instead of <code>/** */</code>. Supports backtick code, <code>[Type]</code> links, bullet lists, headers. Fenced code blocks are highlighted.</p>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 24 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="24" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Stream gatherers — sliding window</span><span class="badge added">Java 24</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// No built-in sliding window; must iterate manually
 List&lt;List&lt;Integer&gt;&gt; windows = new ArrayList&lt;&gt;();
-for (int i = 0; i &lt;= numbers.size() - 3; i++) {
-    windows.add(numbers.subList(i, i + 3));
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">import java.util.stream.Gatherers;
-
-List&lt;List&lt;Integer&gt;&gt; windows = numbers.stream()
+for (int i = 0; i &lt;= nums.size() - 3; i++)
+    windows.add(nums.subList(i, i + 3));</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;List&lt;Integer&gt;&gt; windows = nums.stream()
     .gather(Gatherers.windowSliding(3))
     .toList();
-
-// Fixed-size batches
-List&lt;List&lt;Integer&gt;&gt; batches = numbers.stream()
-    .gather(Gatherers.windowFixed(100))
-    .toList();</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 485 — <code>Gatherer</code> is a composable intermediate operator. Built-ins: <code>windowSliding</code>, <code>windowFixed</code>, <code>fold</code>, <code>scan</code>, <code>mapConcurrent</code>. Write custom ones too.</p>
+// [1,2,3,4,5] -&gt; [[1,2,3],[2,3,4],[3,4,5]]</code></pre></div>
     </div>
+    <p class="ba-note">JEP 485 — <code>Gatherer</code> is a custom intermediate operator. Built-ins: <code>windowSliding</code>, <code>windowFixed</code>, <code>fold</code>, <code>scan</code>, <code>mapConcurrent</code>.</p>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 25 ═══════════════════════════════ -->
-
-    <div class="ba-card" data-ver="25" data-cat="concurrency">
-      <div class="ba-header">
-        <span class="ba-title">Scoped values</span>
-        <span class="badge added">Java 25</span>
-        <span class="ba-cat">Concurrency</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">static final ThreadLocal&lt;User&gt; CURRENT_USER =
-    new ThreadLocal&lt;&gt;();
-
-CURRENT_USER.set(user);
-try {
-    process();
-} finally {
-    CURRENT_USER.remove();  // easy to forget → memory leak
+  <div class="ba-card" data-ver="24" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Stream gatherers — fixed window / batching</span><span class="badge added">Java 24</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Batch stream into chunks of 100
+List&lt;List&lt;Item&gt;&gt; batches = new ArrayList&lt;&gt;();
+List&lt;Item&gt; chunk = new ArrayList&lt;&gt;();
+for (Item item : items) {
+    chunk.add(item);
+    if (chunk.size() == 100) {
+        batches.add(new ArrayList&lt;&gt;(chunk));
+        chunk.clear();
+    }
 }
-// Shared across thread-pool reuse; mutable by child threads</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">static final ScopedValue&lt;User&gt; CURRENT_USER =
-    ScopedValue.newInstance();
-
-ScopedValue.runWhere(CURRENT_USER, user, () -&gt; {
-    process();  // CURRENT_USER visible to all callees
-});
-// Automatically cleared when the scope exits.
-// Immutable — child threads can read, not overwrite.</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 487 — scoped values work well with virtual threads and structured concurrency. Unlike ThreadLocal they cannot be mutated by callees and have no risk of leaking across pool reuse.</p>
+if (!chunk.isEmpty()) batches.add(chunk);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">items.stream()
+    .gather(Gatherers.windowFixed(100))
+    .forEach(batch -&gt; bulkInsert(batch));
+// Last batch may be smaller — handled automatically</code></pre></div>
     </div>
+  </div>
 
-    <div class="ba-card" data-ver="25" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Compact source files (instance main)</span>
-        <span class="badge added">Java 25</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">// Hello.java
-public class Hello {
+  <div class="ba-card" data-ver="24" data-cat="streams">
+    <div class="ba-header"><span class="ba-title">Stream gatherers — fold (running accumulation)</span><span class="badge added">Java 24</span><span class="ba-cat">Streams</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Running sum — no streaming built-in
+List&lt;Integer&gt; runningSum = new ArrayList&lt;&gt;();
+int acc = 0;
+for (int n : numbers) {
+    acc += n;
+    runningSum.add(acc);
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">List&lt;Integer&gt; runningSum = numbers.stream()
+    .gather(Gatherers.scan(() -&gt; 0, Integer::sum))
+    .toList();
+// scan emits the accumulator after every element
+// fold: collapses to a single value (like reduce)</code></pre></div>
+    </div>
+  </div>
+
+  <div class="ba-card" data-ver="24" data-cat="tooling">
+    <div class="ba-header"><span class="ba-title">Class-File API — standard bytecode manipulation</span><span class="badge added">Java 24</span><span class="ba-cat">Tooling / JVM</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Required third-party library (ASM, Javassist, ByteBuddy)
+ClassReader cr = new ClassReader("com.example.Foo");
+ClassWriter cw = new ClassWriter(cr, 0);
+cr.accept(new ClassVisitor(ASM9, cw) {
+    // override visitMethod to transform
+}, 0);
+byte[] modified = cw.toByteArray();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Standard JDK API — no external dependency
+ClassFile cf = ClassFile.of();
+byte[] modified = cf.transform(
+    cf.parse(originalBytes),
+    (builder, element) -&gt; {
+        if (element instanceof MethodModel mm)
+            builder.transformMethod(mm, MethodTransform.EMPTY);
+        else
+            builder.with(element);
+    });</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 484 — replaces ASM/Javassist for framework/agent authors. The JDK itself uses it internally (replacing its own ASM copy).</p>
+  </div>
+
+  <div class="ba-card" data-ver="24" data-cat="concurrency">
+    <div class="ba-header"><span class="ba-title">synchronized no longer pins virtual threads</span><span class="badge added">Java 24</span><span class="ba-cat">Concurrency</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Java 21: synchronized pinned VT to its carrier thread.
+// VT inside synchronized + blocking I/O = carrier blocked.
+// Workaround: replace synchronized with ReentrantLock.
+private final ReentrantLock lock = new ReentrantLock();
+lock.lock();
+try { result = db.query(sql); } finally { lock.unlock(); }</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Java 24: synchronized no longer pins.
+// Virtual thread unmounts from carrier even inside synchronized.
+synchronized (this) {
+    result = db.query(sql);  // carrier is free during I/O wait
+}
+// No need to rewrite to ReentrantLock just to avoid pinning.</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 491 — removes the main reason people had to avoid <code>synchronized</code> with virtual threads. Existing code automatically benefits.</p>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 25 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="25" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Compact source files — no class boilerplate</span><span class="badge added">Java 25</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// HelloWorld.java — must wrap everything in a class
+public class HelloWorld {
     public static void main(String[] args) {
         System.out.println("Hello, World!");
     }
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">// hello.java — no class wrapper, no args, no static
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// hello.java — no class declaration, no args, no static
 void main() {
     System.out.println("Hello, World!");
 }
-
-// Run: java hello.java
-// JVM wraps it in an implicit class automatically.</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 512 — removes ceremony for scripts and educational code. Full Java features still available; <code>import</code> statements work as normal.</p>
+// java hello.java — JVM wraps it in an implicit class</code></pre></div>
     </div>
+    <p class="ba-note">JEP 512 — full Java available; imports work normally. Great for scripts, prototypes, and teaching Java without ceremony.</p>
+  </div>
 
-    <!-- ═══════════════════════════════ JAVA 26 ═══════════════════════════════ -->
+  <div class="ba-card" data-ver="25" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Module import declarations</span><span class="badge added">Java 25</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.ArrayList;
+import java.nio.file.Path;
+import java.nio.file.Files;
+import java.io.IOException;
+// ... many more for a simple utility script</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">import module java.base;  // imports all exported packages of java.base
 
-    <div class="ba-card" data-ver="26" data-cat="language">
-      <div class="ba-header">
-        <span class="ba-title">Flexible constructor bodies</span>
-        <span class="badge added">Java 26</span>
-        <span class="ba-cat">Language</span>
-      </div>
-      <div class="ba-split">
-        <div class="ba-pane">
-          <div class="ba-label old">Old</div>
-          <pre><code class="java">class Circle extends Shape {
+List&lt;String&gt; list = List.of("a", "b");
+Path path = Path.of("file.txt");
+String content = Files.readString(path);
+// Reduces import boilerplate without a wildcard ambiguity risk</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 494 — module imports are transitive through <code>requires transitive</code> declarations. Ideal for scripts and compact source files.</p>
+  </div>
+
+  <div class="ba-card" data-ver="25" data-cat="language">
+    <div class="ba-header"><span class="ba-title">Flexible constructor bodies — statements before super()</span><span class="badge added">Java 25</span><span class="ba-cat">Language</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">class Circle extends Shape {
     final double radius;
     Circle(double radius) {
-        super(validate(radius));  // super() MUST be first line
+        super(validate(radius));   // super() MUST be first statement
         this.radius = radius;
     }
     private static double validate(double r) {
         if (r &lt;= 0) throw new IllegalArgumentException();
         return r;
     }
-}</code></pre>
-        </div>
-        <div class="ba-pane">
-          <div class="ba-label new">Modern</div>
-          <pre><code class="java">class Circle extends Shape {
+}</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">class Circle extends Shape {
     final double radius;
     Circle(double radius) {
-        // Statements allowed before super() now
         if (radius &lt;= 0) throw new IllegalArgumentException();
-        super(radius);
+        super(radius);     // validation before super() — no static helper needed
         this.radius = radius;
     }
-}</code></pre>
-        </div>
-      </div>
-      <p class="ba-note">JEP 513 — validation, logging or local variable setup can now appear before <code>super()</code>/<code>this()</code>. You still cannot read <code>this</code> before the super-constructor call.</p>
+}</code></pre></div>
     </div>
+    <p class="ba-note">JEP 513 — statements before <code>super()</code>/<code>this()</code> may not access <code>this</code>. Eliminates the pattern of private static helpers whose sole purpose is pre-validation.</p>
+  </div>
+
+  <div class="ba-card" data-ver="25" data-cat="concurrency">
+    <div class="ba-header"><span class="ba-title">Scoped values — immutable per-scope data</span><span class="badge added">Java 25</span><span class="ba-cat">Concurrency</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">static final ThreadLocal&lt;User&gt; CURRENT_USER = new ThreadLocal&lt;&gt;();
+
+CURRENT_USER.set(user);
+try {
+    processRequest();
+} finally {
+    CURRENT_USER.remove();   // easy to forget -&gt; memory leak
+}
+// Mutable by child code; leaks across thread-pool reuse</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">static final ScopedValue&lt;User&gt; CURRENT_USER =
+    ScopedValue.newInstance();
+
+ScopedValue.runWhere(CURRENT_USER, user, () -&gt; {
+    processRequest();  // CURRENT_USER visible in all callees
+});
+// Automatically cleared when scope exits — no remove() needed
+// Immutable: callees cannot overwrite it</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 487 — scoped values work naturally with virtual threads and structured concurrency. Unlike <code>ThreadLocal</code> they have no mutation, no inheritance, and no leaks.</p>
+  </div>
+
+  <div class="ba-card" data-ver="25" data-cat="concurrency">
+    <div class="ba-header"><span class="ba-title">Structured concurrency — coordinated task scopes</span><span class="badge added">Java 25</span><span class="ba-cat">Concurrency</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">var exec = Executors.newVirtualThreadPerTaskExecutor();
+Future&lt;User&gt;  userF  = exec.submit(() -&gt; fetchUser(id));
+Future&lt;Order&gt; orderF = exec.submit(() -&gt; fetchOrder(id));
+// If fetchUser fails, fetchOrder keeps running — wasted work.
+// Manual cancellation + exception handling required.
+User  user  = userF.get();
+Order order = orderF.get();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
+    Subtask&lt;User&gt;  userTask  = scope.fork(() -&gt; fetchUser(id));
+    Subtask&lt;Order&gt; orderTask = scope.fork(() -&gt; fetchOrder(id));
+    scope.join().throwIfFailed();  // cancels all on first failure
+    return new Dashboard(userTask.get(), orderTask.get());
+}</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 499 — <code>ShutdownOnSuccess</code> cancels siblings when any task succeeds (useful for racing alternative strategies). Lifetime of sub-tasks is bounded by the scope.</p>
+  </div>
+
+  <div class="ba-card" data-ver="25" data-cat="tooling">
+    <div class="ba-header"><span class="ba-title">AOT class preloading — faster startup</span><span class="badge added">Java 25</span><span class="ba-cat">Tooling / JVM</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="bash"># Cold start: JVM loads, links, initialises every class from scratch
+$ java -jar app.jar
+# Spring Boot 3.x: ~4.9 s startup</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="bash"># Step 1 — training run (save AOT cache)
+$ java -XX:AOTCacheOutput=app.aot -jar app.jar
+
+# Step 2 — production run (use cached class state)
+$ java -XX:AOTCache=app.aot -jar app.jar
+# Spring Boot 3.3+: ~2.4 s startup (51% faster)
+# No code changes needed — just two JVM flags</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 483 (Java 24) + JEP 515 (Java 25 method profiling) — Project Leyden. JIT starts generating optimised code from the very first request because warmup profiles are pre-cached.</p>
+  </div>
+
+  <!-- ══════════════════════════ JAVA 26 ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="26" data-cat="api">
+    <div class="ba-header"><span class="ba-title">HttpClient — HTTP/3 support</span><span class="badge added">Java 26</span><span class="ba-cat">API</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">HttpClient client = HttpClient.newBuilder()
+    .version(HttpClient.Version.HTTP_2)  // max was HTTP/2
+    .build();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">HttpClient client = HttpClient.newBuilder()
+    .version(HttpClient.Version.HTTP_3)  // QUIC/UDP transport
+    .build();
+// Falls back to HTTP/2 if server doesn't support HTTP/3.
+// Benefits: connection reuse, 0-RTT, no head-of-line blocking</code></pre></div>
+    </div>
+    <p class="ba-note">Java 26 — the built-in <code>HttpClient</code> no longer needs an external library for HTTP/3. Zero additional dependencies.</p>
+  </div>
 
   </div><!-- #ba-grid -->
-  <div id="no-results">No examples match these filters.</div>
-
+  <div id="no-results">No examples match these filters — try a different combination.</div>
 </main>
 <script src="../assets/nav.js"></script>
 <script src="../assets/highlight.js"></script>
 <script>
 (function () {
-  var verSel   = document.getElementById('ver-sel');
-  var catSel   = document.getElementById('cat-sel');
-  var countEl  = document.getElementById('ba-count');
-  var noRes    = document.getElementById('no-results');
-  var cards    = Array.from(document.querySelectorAll('#ba-grid .ba-card'));
+  var verSel  = document.getElementById('ver-sel');
+  var catSel  = document.getElementById('cat-sel');
+  var countEl = document.getElementById('ba-count');
+  var noRes   = document.getElementById('no-results');
+  var cards   = Array.from(document.querySelectorAll('#ba-grid .ba-card'));
 
   function filter() {
-    var ver = verSel.value;
-    var cat = catSel.value;
+    var ver     = verSel.value;
+    var cat     = catSel.value;
     var visible = 0;
     cards.forEach(function (c) {
       var show = (ver === 'all' || c.dataset.ver === ver) &&
