@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GraalVM — complete guide</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root="../" data-page="topics/graalvm.html" data-title="GraalVM">
+<main>
+  <p class="sec-tag">Deep dive · JVM internals · complete guide</p>
+  <h1>GraalVM &amp; Native Image</h1>
+  <p class="lead">
+    GraalVM compiles Java all the way down to a <strong>standalone native binary</strong>
+    — no JVM needed at runtime. You get millisecond startup, a tiny memory footprint, and a
+    single self-contained executable. This page explains how it works, how to build and run it,
+    what the trade-offs are, and how it differs from the JDK's built-in
+    <a href="aot-cache.html">AOT Cache</a>.
+  </p>
+
+  <div class="hero-stats">
+    <div class="stat"><span class="num">~10 ms</span><span class="lbl">typical native image startup</span></div>
+    <div class="stat"><span class="num">50–80%</span><span class="lbl">less memory than a JVM app</span></div>
+    <div class="stat"><span class="num">no JVM</span><span class="lbl">needed at runtime</span></div>
+    <div class="stat"><span class="num">closed-world</span><span class="lbl">assumption — the key trade-off</span></div>
+  </div>
+
+  <div class="solves">
+    <span class="solves-label">The problem it solves</span>
+    Traditional Java needs a JVM to start up, warm up, and reach peak performance. For a
+    command-line tool, a serverless function, or a microservice behind a load balancer, the JVM's
+    warm-up latency and large memory footprint are a real cost. GraalVM Native Image eliminates
+    both by compiling the entire application — including the JDK, framework, and your code — into
+    a single native executable at build time.
+  </div>
+
+  <div class="page-toc">
+    <strong>On this page</strong>
+    <a href="#what-is-graalvm">1. What is GraalVM?</a>
+    <a href="#modes">2. Two execution modes</a>
+    <a href="#install">3. Install GraalVM</a>
+    <a href="#hello-world">4. Hello World — build &amp; run</a>
+    <a href="#realistic-example">5. Realistic example — file processing CLI</a>
+    <a href="#how-ni-works">6. How Native Image works</a>
+    <a href="#reflection">7. Reflection &amp; dynamic features</a>
+    <a href="#build-tools">8. Maven &amp; Gradle integration</a>
+    <a href="#spring-boot">9. Spring Boot native images</a>
+    <a href="#pgo">10. Profile-guided optimisation (PGO)</a>
+    <a href="#vs-aot">11. GraalVM vs JDK AOT Cache — comparison</a>
+    <a href="#when-to-use">12. When to use which</a>
+    <a href="#gotchas">13. Gotchas &amp; limitations</a>
+    <a href="#cheat-sheet">14. Cheat sheet</a>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="what-is-graalvm">1. What is GraalVM?</h2>
+  <p>
+    GraalVM is a high-performance JDK distribution maintained by Oracle.
+    It contains everything a standard JDK has, plus two major extras:
+  </p>
+  <ul>
+    <li>
+      <strong>The Graal JIT compiler</strong> — a drop-in replacement for C2 (the standard JVM's
+      top-tier JIT), written in Java. It can produce tighter code for certain workloads. It was
+      available as an experimental option in standard JDKs via JVMCI, but JVMCI is being removed
+      in Java 27 (JEP 503), so this path is closing in the standard JDK.
+    </li>
+    <li>
+      <strong>Native Image</strong> — an AOT compiler that analyses your application statically and
+      compiles everything into a standalone native executable. This is the main reason to use
+      GraalVM today.
+    </li>
+  </ul>
+  <p>
+    The three distributions you'll encounter:
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Distribution</th><th>Who makes it</th><th>Cost</th><th>Key extras</th></tr></thead>
+      <tbody>
+        <tr><td><strong>GraalVM Community Edition (CE)</strong></td><td>Oracle / open source</td><td>Free (GPLv2)</td><td>Native Image, Graal JIT</td></tr>
+        <tr><td><strong>Oracle GraalVM</strong> (formerly EE)</td><td>Oracle</td><td>Free for production since 2023</td><td>CE + PGO, G1 GC in native, better throughput</td></tr>
+        <tr><td><strong>Mandrel</strong></td><td>Red Hat</td><td>Free</td><td>CE without Graal JIT — only Native Image; designed for Quarkus</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="modes">2. Two execution modes</h2>
+  <p>
+    Any Java program can run in either mode — the choice is made at launch time (JVM mode) or build time (native):
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Mode</th><th>How you run it</th><th>JIT at runtime</th><th>Startup</th><th>Peak throughput</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>JVM mode</strong></td>
+          <td><code>java -jar app.jar</code></td>
+          <td>Yes (Graal JIT)</td>
+          <td>Normal JVM start (~1–5 s)</td>
+          <td>High (JIT-optimised, may exceed C2)</td>
+        </tr>
+        <tr>
+          <td><strong>Native Image</strong></td>
+          <td><code>./app</code></td>
+          <td>No (AOT only, no C2 or Graal JIT)</td>
+          <td>Milliseconds (5–50 ms)</td>
+          <td>Good (~70–85% of JVM; higher with PGO)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    For long-running services like REST APIs, <strong>JVM mode</strong> eventually wins on
+    throughput because the JIT can profile real traffic. For <strong>short-lived processes</strong>
+    (CLI tools, serverless, sidecar containers), Native Image wins hands down.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="install">3. Install GraalVM</h2>
+
+  <h3>Option A — SDKMAN (recommended, any OS)</h3>
+  <pre><code class="bash"># Install SDKMAN if not already present
+curl -s "https://get.sdkman.io" | bash
+source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+# List available GraalVM builds
+sdk list java | grep graal
+
+# Install Oracle GraalVM for Java 21 (LTS)
+sdk install java 21.0.4-graal
+
+# Or GraalVM CE
+sdk install java 21.0.4-graalce
+
+# Switch to it
+sdk use java 21.0.4-graal
+
+# Verify
+java -version
+# java version "21.0.4" ... GraalVM ...
+native-image --version
+# native-image 21.0.4 ...</code></pre>
+
+  <h3>Option B — Homebrew (macOS)</h3>
+  <pre><code class="bash">brew install --cask graalvm/tap/graalvm-jdk-21
+export JAVA_HOME=/Library/Java/JavaVirtualMachines/graalvm-jdk-21.jdk/Contents/Home
+export PATH=$JAVA_HOME/bin:$PATH</code></pre>
+
+  <h3>Option C — Direct download</h3>
+  <p>
+    Download from <strong>graalvm.github.io</strong> (CE) or <strong>oracle.com/java</strong>
+    (Oracle GraalVM). Extract and set <code>JAVA_HOME</code> to the extracted directory.
+  </p>
+  <pre><code class="bash">export JAVA_HOME=/path/to/graalvm-jdk-21
+export PATH=$JAVA_HOME/bin:$PATH
+# native-image is bundled since GraalVM for JDK 21+</code></pre>
+
+  <div class="note">
+    <strong>native-image is bundled since GraalVM for JDK 21.</strong> In older GraalVM versions
+    (pre-22.3) you had to run <code>gu install native-image</code> separately. If you see
+    "command not found", check your version.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="hello-world">4. Hello World — build &amp; run</h2>
+
+  <h3>4.1 Write the Java source</h3>
+  <pre><code class="java">// Hello.java
+public class Hello {
+    public static void main(String[] args) {
+        String name = args.length > 0 ? args[0] : "World";
+        System.out.println("Hello, " + name + "!");
+        System.out.println("Running as native: " +
+            (System.getProperty("org.graalvm.nativeimage.imagecode") != null));
+    }
+}</code></pre>
+
+  <h3>4.2 Compile with javac</h3>
+  <pre><code class="bash">javac Hello.java
+# Produces Hello.class — a normal .class file</code></pre>
+
+  <h3>4.3 Build the native image</h3>
+  <pre><code class="bash">native-image Hello
+# ========================================================
+# GraalVM Native Image: Generating 'hello' (executable)...
+# ========================================================
+# [1/8] Initializing...    (1.5s @ 0.08GB)
+# [2/8] Performing analysis...  [*****] (12.4s @ 0.67GB)
+# [3/8] Building universe...   (0.7s @ 0.58GB)
+# [4/8] Parsing methods...      (0.9s @ 0.87GB)
+# [5/8] Inlining methods...     (1.1s @ 0.87GB)
+# [6/8] Compiling methods...   (5.8s @ 0.87GB)
+# [7/8] Layouting methods...   (0.8s @ 0.95GB)
+# [8/8] Creating image...      (1.3s @ 1.00GB)
+#   4.03MB  hello  (executable)
+# Finished generating 'hello' in 25.0s.
+</code></pre>
+
+  <h3>4.4 Run it</h3>
+  <pre><code class="bash"># Run the native binary — no java command, no JVM
+./hello
+# Hello, World!
+# Running as native: true
+
+./hello GraalVM
+# Hello, GraalVM!
+# Running as native: true
+
+# Compare startup time
+time java Hello        # ~150–300 ms (JVM startup + class loading)
+time ./hello           # ~5–15 ms (native, no JVM)
+
+# Check the binary — it really is standalone
+file hello
+# hello: Mach-O 64-bit executable arm64   (macOS)
+# hello: ELF 64-bit LSB executable, x86-64 (Linux)
+
+ldd hello       # shows libc and libpthread only — no JVM libraries!</code></pre>
+
+  <div class="tip">
+    <strong>Build time is slow (15–60 seconds)</strong> — that's expected. Static analysis must
+    trace every reachable class and method from the entry point. This happens once at build time,
+    never at runtime.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="realistic-example">5. Realistic example — file word-count CLI</h2>
+  <p>
+    A small CLI tool: reads a file, prints line count, word count, char count.
+    Exactly the kind of thing that benefits enormously from instant startup.
+  </p>
+
+  <pre><code class="java">// Wc.java
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public class Wc {
+    public static void main(String[] args) throws IOException {
+        if (args.length == 0) {
+            System.err.println("Usage: wc &lt;file&gt;");
+            System.exit(1);
+        }
+        Path path = Path.of(args[0]);
+        String content = Files.readString(path);
+        String[] lines = content.split("\n");
+        String[] words = content.trim().isEmpty()
+            ? new String[0] : content.trim().split("\\s+");
+
+        System.out.printf("%6d  %6d  %6d  %s%n",
+            lines.length, words.length, content.length(), args[0]);
+    }
+}</code></pre>
+
+  <pre><code class="bash"># Build
+javac Wc.java
+native-image Wc
+
+# Run
+./wc Wc.java
+#     18      82     578  Wc.java
+
+# The native version starts in ~8 ms vs ~180 ms for `java Wc`
+# For a script run 100 times a day that's 17 seconds saved daily</code></pre>
+
+  <h3>5.1 JAR-based build (more realistic)</h3>
+  <p>In real projects you compile to a JAR first:</p>
+  <pre><code class="bash"># Package as a fat/uber JAR (shown with javac + jar; real projects use Maven/Gradle)
+javac -d out src/**/*.java
+jar --create --file app.jar --main-class com.example.Wc -C out .
+
+# Build native image from JAR
+native-image -jar app.jar -o wc-tool
+
+./wc-tool Wc.java</code></pre>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="how-ni-works">6. How Native Image works</h2>
+  <p>
+    Native Image uses a <strong>points-to analysis</strong> (also called reachability analysis)
+    to determine every class, method, and field that can possibly be reached from your
+    <code>main()</code> at runtime. Only reachable code gets compiled. Everything else is
+    discarded — this is what makes the binary small.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Build-time phase</th><th>What happens</th></tr></thead>
+      <tbody>
+        <tr><td>Initializing</td><td>Loads the classpath, finds the entry point</td></tr>
+        <tr><td>Performing analysis</td><td>Points-to analysis — finds all reachable code (slowest step)</td></tr>
+        <tr><td>Building universe</td><td>Builds type hierarchy for the reachable set</td></tr>
+        <tr><td>Parsing methods</td><td>Converts bytecode to an IR for compilation</td></tr>
+        <tr><td>Inlining methods</td><td>Aggressive inlining (more than the JIT can safely do)</td></tr>
+        <tr><td>Compiling methods</td><td>Generates machine code via LLVM-style backend</td></tr>
+        <tr><td>Creating image</td><td>Links code + pre-initialised heap into one binary</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Closed-world assumption</h3>
+  <p>
+    Because the analysis runs before you deploy, <strong>all code must be known at build time</strong>.
+    You cannot load classes from a URL, add new JARs to the classpath at runtime, or do anything
+    that requires knowing about code that wasn't there when <code>native-image</code> ran.
+    This is the fundamental trade-off: power vs. dynamism.
+  </p>
+  <p>
+    Dynamic features — reflection, JNI, dynamic proxies, serialization — all violate the
+    closed-world assumption <em>unless</em> you tell Native Image about them via configuration files
+    (see the next section).
+  </p>
+  <h3>Pre-initialised heap</h3>
+  <p>
+    Static initialisers that run at build time have their results "snapshotted" into the binary's
+    heap. When the native binary starts, those objects already exist — this is a major source of
+    startup speed. You can control this with <code>@TargetClass</code> and
+    <code>RuntimeClassInitialization</code> if you have initialisers that must run at runtime.
+  </p>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="reflection">7. Reflection &amp; dynamic features</h2>
+  <p>
+    Any feature that decides what to do at runtime — reflection, JNI, dynamic proxies, Java
+    serialization, resource loading — is opaque to the static analysis. You must declare these
+    explicitly so Native Image can include the required metadata in the binary.
+  </p>
+
+  <h3>7.1 Automatic detection — the Tracing Agent</h3>
+  <p>
+    The easiest way: run your application on the <em>JVM</em> with the tracing agent and let it
+    record all dynamic accesses automatically.
+  </p>
+  <pre><code class="bash"># Run the app with the agent — exercise ALL code paths (tests, integration tests)
+java -agentlib:native-image-agent=config-output-dir=src/main/resources/META-INF/native-image \
+     -jar app.jar
+
+# The agent writes these files:
+# META-INF/native-image/
+#   reflect-config.json      ← reflection
+#   proxy-config.json        ← dynamic proxies
+#   resource-config.json     ← classpath resources
+#   serialization-config.json ← Java serialization
+#   jni-config.json          ← JNI
+
+# Now build — native-image picks up these files automatically
+native-image -jar app.jar</code></pre>
+
+  <h3>7.2 Manual reflect-config.json</h3>
+  <pre><code class="json">// src/main/resources/META-INF/native-image/reflect-config.json
+[
+  {
+    "name": "com.example.UserDto",
+    "allDeclaredFields": true,
+    "allDeclaredMethods": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "com.example.OrderDto",
+    "allDeclaredFields": true,
+    "allDeclaredMethods": true,
+    "allPublicConstructors": true
+  }
+]</code></pre>
+
+  <h3>7.3 Reachability metadata repository</h3>
+  <p>
+    GraalVM maintains a community-contributed registry of metadata for popular libraries
+    (Jackson, Hibernate, Netty, etc.) at <code>github.com/oracle/graalvm-reachability-metadata</code>.
+    Most build tool plugins add this automatically — you often don't need to write
+    <code>reflect-config.json</code> for any mainstream library.
+  </p>
+
+  <h3>7.4 @RegisterForReflection (Quarkus / framework annotation)</h3>
+  <pre><code class="java">// If using Quarkus or Micronaut, annotate your DTO instead of a JSON file
+@io.quarkus.runtime.annotations.RegisterForReflection
+public class UserDto {
+    public String name;
+    public int age;
+}</code></pre>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="build-tools">8. Maven &amp; Gradle integration</h2>
+
+  <h3>8.1 Maven — native-maven-plugin</h3>
+  <pre><code class="xml">&lt;!-- pom.xml --&gt;
+&lt;properties&gt;
+  &lt;maven.compiler.source&gt;21&lt;/maven.compiler.source&gt;
+  &lt;maven.compiler.target&gt;21&lt;/maven.compiler.target&gt;
+&lt;/properties&gt;
+
+&lt;build&gt;
+  &lt;plugins&gt;
+    &lt;plugin&gt;
+      &lt;groupId&gt;org.graalvm.buildtools&lt;/groupId&gt;
+      &lt;artifactId&gt;native-maven-plugin&lt;/artifactId&gt;
+      &lt;version&gt;0.10.3&lt;/version&gt;
+      &lt;extensions&gt;true&lt;/extensions&gt;
+      &lt;configuration&gt;
+        &lt;imageName&gt;myapp&lt;/imageName&gt;
+        &lt;mainClass&gt;com.example.Main&lt;/mainClass&gt;
+        &lt;buildArgs&gt;
+          &lt;arg&gt;--no-fallback&lt;/arg&gt;        &lt;!-- fail fast; no JVM fallback --&gt;
+          &lt;arg&gt;-march=native&lt;/arg&gt;        &lt;!-- optimise for build machine CPU --&gt;
+          &lt;arg&gt;-O2&lt;/arg&gt;                  &lt;!-- optimisation level --&gt;
+        &lt;/buildArgs&gt;
+      &lt;/configuration&gt;
+    &lt;/plugin&gt;
+  &lt;/plugins&gt;
+&lt;/build&gt;</code></pre>
+  <pre><code class="bash"># Standard build
+mvn package -Pnative    # -Pnative activates the native profile
+
+# Run the result
+./target/myapp</code></pre>
+
+  <h3>8.2 Gradle — org.graalvm.buildtools.native plugin</h3>
+  <pre><code class="groovy">// build.gradle
+plugins {
+    id 'application'
+    id 'org.graalvm.buildtools.native' version '0.10.3'
+}
+
+application {
+    mainClass = 'com.example.Main'
+}
+
+graalvmNative {
+    binaries {
+        main {
+            imageName = 'myapp'
+            buildArgs.add('--no-fallback')
+            buildArgs.add('-O2')
+        }
+    }
+}</code></pre>
+  <pre><code class="bash">./gradlew nativeCompile
+./build/native/nativeCompile/myapp</code></pre>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="spring-boot">9. Spring Boot native images</h2>
+  <p>
+    Spring Boot 3.x has first-class native image support via the Spring AOT engine.
+    At build time, Spring pre-processes all <code>@Configuration</code>, condition evaluation,
+    and component scanning — the results are baked in so Spring doesn't need to do them at
+    runtime.
+  </p>
+  <pre><code class="bash"># Spring Initializr: tick "GraalVM Native Support" when creating a project
+# Or add to existing Maven project:
+# mvn spring-boot:build-image -Pnative   (uses Buildpacks, produces a Docker image)
+# mvn -Pnative native:compile            (produces a local binary)
+
+# With Gradle:
+./gradlew nativeCompile
+./build/native/nativeCompile/demo</code></pre>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Spring Boot + JVM</th><th>Spring Boot + Native Image</th></tr></thead>
+      <tbody>
+        <tr><td>~3–5 s startup</td><td>~80–150 ms startup</td></tr>
+        <tr><td>~300 MB heap at start</td><td>~40–80 MB RSS</td></tr>
+        <tr><td>Full dynamic features</td><td>Needs Spring AOT hints for non-obvious reflection</td></tr>
+        <tr><td>Warms up in ~30 s under load</td><td>No warm-up — but peak throughput lower</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="pgo">10. Profile-guided optimisation (PGO)</h2>
+  <p>
+    By default, Native Image compiles without knowledge of which code paths are hot at runtime —
+    all methods get the same treatment. <strong>PGO</strong> adds a profiling step: you run a
+    special instrumented binary that records execution profiles, then feed those profiles back
+    into a second native-image build that uses them to make better inlining and optimisation
+    decisions.
+  </p>
+  <pre><code class="bash"># Step 1 — build an instrumented binary (Oracle GraalVM / GraalVM EE only)
+native-image --pgo-instrument -jar app.jar -o app-instrumented
+
+# Step 2 — run with realistic workload to collect profiles
+./app-instrumented &lt;typical-traffic-scenario&gt;
+# Produces: default.iprof
+
+# Step 3 — build the final optimised binary
+native-image --pgo=default.iprof -jar app.jar -o app
+
+# Result: throughput typically reaches 80–95% of JVM peak
+# (vs 65–75% for a non-PGO native image)</code></pre>
+  <div class="note">
+    PGO is available in <strong>Oracle GraalVM</strong> (formerly Enterprise Edition, now free).
+    GraalVM CE and Mandrel do not support PGO.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="vs-aot">11. GraalVM Native Image vs JDK AOT Cache</h2>
+  <p>
+    These are often confused because both use the term "AOT", but they solve completely different
+    problems at different layers of the stack.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Dimension</th>
+          <th>GraalVM Native Image</th>
+          <th>JDK AOT Cache (Project Leyden)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>What it produces</strong></td>
+          <td>A standalone native binary (<code>./app</code>)</td>
+          <td>A <code>.aot</code> cache file; still runs on the JVM</td>
+        </tr>
+        <tr>
+          <td><strong>JVM at runtime</strong></td>
+          <td>No JVM required — binary runs natively</td>
+          <td>Full JVM required — JVM loads the cache</td>
+        </tr>
+        <tr>
+          <td><strong>Startup improvement</strong></td>
+          <td>~10–50 ms (vs 1–5 s cold JVM)</td>
+          <td>40–60% faster JVM start (e.g. 5 s → 2.5 s)</td>
+        </tr>
+        <tr>
+          <td><strong>Peak throughput</strong></td>
+          <td>65–85% of JVM (without PGO); ~90–95% with PGO</td>
+          <td>Same as JVM — JIT still runs fully at runtime</td>
+        </tr>
+        <tr>
+          <td><strong>Memory footprint</strong></td>
+          <td>50–80% less than a JVM app</td>
+          <td>Same as JVM app (cache is disk, not RAM)</td>
+        </tr>
+        <tr>
+          <td><strong>Closed-world assumption</strong></td>
+          <td><strong>Yes</strong> — all classes must be known at build time</td>
+          <td>No — dynamic class loading, runtime bytecode still work</td>
+        </tr>
+        <tr>
+          <td><strong>Reflection</strong></td>
+          <td>Needs config files or tracing agent</td>
+          <td>Works automatically — no changes needed</td>
+        </tr>
+        <tr>
+          <td><strong>Dynamic proxies</strong></td>
+          <td>Needs <code>proxy-config.json</code></td>
+          <td>Works automatically</td>
+        </tr>
+        <tr>
+          <td><strong>Migration effort</strong></td>
+          <td>Potentially high (reflection config, library compat)</td>
+          <td>Zero — two JVM flags, same <code>.jar</code></td>
+        </tr>
+        <tr>
+          <td><strong>Who makes it</strong></td>
+          <td>GraalVM / Oracle (separate distribution)</td>
+          <td>Standard JDK 24+, stable in 25</td>
+        </tr>
+        <tr>
+          <td><strong>Distribution size</strong></td>
+          <td>Small self-contained binary (~5–50 MB)</td>
+          <td>Same JAR + <code>.aot</code> cache file (~50–200 MB)</td>
+        </tr>
+        <tr>
+          <td><strong>Container image size</strong></td>
+          <td>~20–80 MB (FROM scratch possible)</td>
+          <td>~200–600 MB (needs full JRE/JDK)</td>
+        </tr>
+        <tr>
+          <td><strong>GC</strong></td>
+          <td>Serial GC by default (fast), G1 opt-in (Oracle only)</td>
+          <td>Any JVM GC (G1, ZGC, Shenandoah, Serial)</td>
+        </tr>
+        <tr>
+          <td><strong>Best for</strong></td>
+          <td>Serverless, CLI tools, microservices needing &lt;50 ms start</td>
+          <td>Any existing JVM app; free startup win with no code changes</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Side-by-side startup demo</h3>
+  <pre><code class="bash">## Same Spring Boot app, three configurations:
+
+# 1. Plain JVM (cold)
+time java -jar app.jar
+# real  0m4.921s
+
+# 2. JVM + AOT Cache (JDK 25 / Project Leyden)
+java -XX:AOTCacheOutput=app.aot -jar app.jar     # one-time training run
+time java -XX:AOTCache=app.aot -jar app.jar
+# real  0m2.437s     ← ~50% faster, same jar, no code changes
+
+# 3. GraalVM Native Image
+native-image -jar app.jar -o app-native
+time ./app-native
+# real  0m0.082s     ← 60x faster than cold JVM, no JVM needed</code></pre>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="when-to-use">12. When to use which</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Scenario</th><th>Recommendation</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Existing JVM service; want faster restart</td>
+          <td><strong>JDK AOT Cache</strong></td>
+          <td>Zero migration cost, works with everything</td>
+        </tr>
+        <tr>
+          <td>AWS Lambda / Google Cloud Functions</td>
+          <td><strong>GraalVM Native Image</strong></td>
+          <td>Billed per millisecond; cold-start latency is money</td>
+        </tr>
+        <tr>
+          <td>CLI tool or developer toolchain binary</td>
+          <td><strong>GraalVM Native Image</strong></td>
+          <td>Single binary, instant start, no JVM to install</td>
+        </tr>
+        <tr>
+          <td>Long-running REST API / batch job</td>
+          <td><strong>JVM (plain or + AOT Cache)</strong></td>
+          <td>JIT wins on sustained throughput; full Java features</td>
+        </tr>
+        <tr>
+          <td>Microservice in a container, must stay below 100 ms start</td>
+          <td><strong>GraalVM Native Image</strong></td>
+          <td>Tiny image, instant start, lower RSS per replica</td>
+        </tr>
+        <tr>
+          <td>App uses heavy reflection (legacy Spring XML, etc.)</td>
+          <td><strong>JDK AOT Cache first</strong></td>
+          <td>Native image config overhead may not be worth it</td>
+        </tr>
+        <tr>
+          <td>Quarkus / Micronaut app</td>
+          <td><strong>GraalVM Native Image</strong></td>
+          <td>Frameworks are designed for it; metadata bundled</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="tip">
+    <strong>They are not mutually exclusive.</strong> You can ship one JAR and deploy it three
+    ways: cold JVM for local dev, JVM + AOT Cache for staging/high-throughput production, and a
+    native image for the serverless variant — all from the same source.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="gotchas">13. Gotchas &amp; limitations</h2>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Issue</th><th>Detail</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Reflection not found</strong></td>
+          <td><code>ClassNotFoundException</code> or missing method at runtime</td>
+          <td>Run tracing agent; add <code>reflect-config.json</code></td>
+        </tr>
+        <tr>
+          <td><strong>Class initialisation order</strong></td>
+          <td>Static initialiser runs at build time, but code assumes runtime values (e.g. current time)</td>
+          <td>Use <code>--initialize-at-run-time=com.example.MyClass</code></td>
+        </tr>
+        <tr>
+          <td><strong>--no-fallback vs fallback image</strong></td>
+          <td>By default, if native-image fails analysis it creates a "fallback" that wraps a JVM. Pass <code>--no-fallback</code> to fail instead.</td>
+          <td>Always use <code>--no-fallback</code> in CI to catch problems early</td>
+        </tr>
+        <tr>
+          <td><strong>No JIT at runtime</strong></td>
+          <td>Tight loops that the JIT would specialise stay at the AOT-compiled level</td>
+          <td>Use PGO (Oracle GraalVM) to recover throughput</td>
+        </tr>
+        <tr>
+          <td><strong>Build time &amp; RAM</strong></td>
+          <td>Native image build needs 4–8 GB RAM and 30–120 s</td>
+          <td>Run in CI; use <code>-Ob</code> (quick build mode) for local dev</td>
+        </tr>
+        <tr>
+          <td><strong>Cross-compilation</strong></td>
+          <td>By default, native-image produces a binary for the <em>build machine</em>'s OS/arch</td>
+          <td>Use Docker multi-stage builds to produce Linux binaries from macOS; or GraalVM's static image feature</td>
+        </tr>
+        <tr>
+          <td><strong>Thread.sleep, finalisers, agent attach</strong></td>
+          <td>Some JVM features simply don't exist in native (finalisers, dynamic agents, JMX)</td>
+          <td>Remove or replace with native-compatible alternatives</td>
+        </tr>
+        <tr>
+          <td><strong>Security providers</strong></td>
+          <td>Dynamically loaded security providers (e.g. BouncyCastle via reflection) need config</td>
+          <td>Register via <code>reflect-config.json</code> or the provider's native-image guide</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="cheat-sheet">14. Cheat sheet</h2>
+
+  <h3>Essential native-image flags</h3>
+  <pre><code class="bash"># Basic
+native-image -jar app.jar -o myapp           # build from JAR
+native-image --no-fallback -jar app.jar      # fail if analysis is incomplete
+
+# Optimisation
+native-image -O2 -jar app.jar                # optimise (default is -O2 for release)
+native-image -Ob -jar app.jar                # quick build (faster, less optimised — dev mode)
+native-image -march=native -jar app.jar      # target build machine's CPU ISA
+
+# Reflection / resources
+native-image -H:ReflectionConfigurationFiles=reflect-config.json -jar app.jar
+native-image -H:ResourceConfigurationFiles=resource-config.json  -jar app.jar
+
+# Static binary (Linux only, needs musl libc)
+native-image --static --libc=musl -jar app.jar   # truly zero dependency binary
+
+# PGO (Oracle GraalVM)
+native-image --pgo-instrument -jar app.jar   # build instrumented binary
+./app-instrumented                           # run to collect profiles
+native-image --pgo=default.iprof -jar app.jar  # build optimised binary
+
+# Debugging
+native-image -g -jar app.jar                 # include debug symbols
+native-image -H:+PrintAnalysisCallTree -jar app.jar  # see reachability analysis</code></pre>
+
+  <h3>Useful system properties at runtime</h3>
+  <pre><code class="java">// Detect whether running as native image or on JVM
+boolean isNative =
+    System.getProperty("org.graalvm.nativeimage.imagecode") != null;
+
+// Values: "buildtime" (during native-image build), "runtime" (native binary running)
+String imageCode =
+    System.getProperty("org.graalvm.nativeimage.imagecode", "jvm");</code></pre>
+
+  <h3>Quick comparison recap</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th></th><th>Cold JVM</th><th>JVM + AOT Cache</th><th>Native Image</th><th>Native Image + PGO</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Startup</strong></td><td>~3–5 s</td><td>~1.5–2.5 s</td><td>~10–50 ms</td><td>~10–50 ms</td></tr>
+        <tr><td><strong>Throughput</strong></td><td>100% (baseline)</td><td>100%</td><td>~70–80%</td><td>~90–95%</td></tr>
+        <tr><td><strong>Memory</strong></td><td>100%</td><td>~100%</td><td>~20–40%</td><td>~20–40%</td></tr>
+        <tr><td><strong>Migration effort</strong></td><td>—</td><td>Zero</td><td>Medium–High</td><td>Medium–High + profiling run</td></tr>
+        <tr><td><strong>Dynamic features</strong></td><td>Full</td><td>Full</td><td>Limited (config)</td><td>Limited (config)</td></tr>
+        <tr><td><strong>JVM needed</strong></td><td>Yes</td><td>Yes</td><td>No</td><td>No</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+<script src="../assets/nav.js"></script>
+<script src="../assets/highlight.js"></script>
+</body>
+</html>

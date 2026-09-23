@@ -56,7 +56,8 @@
       { href: "topics/jvm-memory-gc.html",          label: "JVM Memory Model & GC" },
       { href: "topics/g1-gc.html",                  label: "G1 GC deep dive" },
       { href: "topics/zgc.html",                    label: "ZGC deep dive" },
-      { href: "topics/aot-cache.html",               label: "AOT Cache" }
+      { href: "topics/aot-cache.html",               label: "AOT Cache" },
+      { href: "topics/graalvm.html",                label: "GraalVM & Native Image" }
     ]},
     { title: "Deep dives — tooling", items: [
       { href: "topics/jshell.html",                 label: "JShell (REPL)" },
