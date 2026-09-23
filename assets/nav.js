@@ -52,6 +52,7 @@
       { href: "topics/ffm-api.html",                label: "Foreign Function & Memory API" }
     ]},
     { title: "Deep dives — JVM & memory", items: [
+      { href: "topics/jit.html",                    label: "JIT Compilation" },
       { href: "topics/jvm-memory-gc.html",          label: "JVM Memory Model & GC" },
       { href: "topics/g1-gc.html",                  label: "G1 GC deep dive" },
       { href: "topics/zgc.html",                    label: "ZGC deep dive" },

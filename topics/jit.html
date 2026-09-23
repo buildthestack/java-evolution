@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JIT Compilation — complete guide</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root="../" data-page="topics/jit.html" data-title="JIT Compilation">
+<main>
+  <p class="sec-tag">Deep dive · JVM · beginner to advanced</p>
+  <h1>JIT Compilation <span class="badge">JVM internals</span></h1>
+  <p class="lead">
+    The <strong>Just-In-Time (JIT) compiler</strong> is the reason Java can match C++ in long-running
+    throughput despite shipping bytecode. It watches your program as it runs, finds the hot spots, and
+    compiles them to native machine code on the fly — with optimisations a static compiler could never
+    apply because it doesn't know the real call patterns at compile time.
+  </p>
+
+  <div class="hero-stats">
+    <div class="stat"><span class="num">10–100×</span><span class="lbl">faster than pure interpretation</span></div>
+    <div class="stat"><span class="num">10,000</span><span class="lbl">default invocation threshold (C2)</span></div>
+    <div class="stat"><span class="num">C1 + C2</span><span class="lbl">two compilers, tiered</span></div>
+    <div class="stat"><span class="num">inlining</span><span class="lbl">single biggest win</span></div>
+    <div class="stat"><span class="num">deopt</span><span class="lbl">JIT can always bail out safely</span></div>
+  </div>
+
+  <div class="solves">
+    <span class="solves-label">The problem it solves</span>
+    Java ships <em>bytecode</em> — a platform-neutral instruction set that any JVM can run. Pure
+    interpretation of bytecode is 10–50× slower than native code. A static ahead-of-time compiler (like
+    <code>javac</code>) can't see which code paths are actually hot at runtime. JIT bridges the gap:
+    start fast by interpreting, profile the real execution, and compile only the hot paths — applying
+    runtime-specific optimisations that make the result faster than what a static compiler can produce.
+  </div>
+
+  <div class="page-toc">
+    <strong>On this page</strong>
+    <a href="#what">1. What JIT actually does — the easy version</a>
+    <a href="#pipeline">2. The full compilation pipeline</a>
+    <a href="#tiered">3. Tiered compilation: C1 → C2</a>
+    <a href="#profiling">4. Profiling — how JIT finds hot code</a>
+    <a href="#inlining">5. Inlining — the biggest single win</a>
+    <a href="#escape">6. Escape analysis &amp; stack allocation</a>
+    <a href="#devirt">7. Devirtualization &amp; speculative optimisation</a>
+    <a href="#loops">8. Loop optimisations</a>
+    <a href="#deopt">9. Deoptimisation — when JIT bails out</a>
+    <a href="#osr">10. On-Stack Replacement (OSR)</a>
+    <a href="#codecache">11. Code cache</a>
+    <a href="#graal">12. GraalVM JIT vs C2</a>
+    <a href="#aot">13. AOT vs JIT — tradeoffs</a>
+    <a href="#tools">14. Observing the JIT (tools &amp; flags)</a>
+    <a href="#friendly">15. Writing JIT-friendly code</a>
+    <a href="#cheat">Cheat sheet</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="what">1 · What JIT actually does — the easy version</h2>
+  <p>Imagine a restaurant kitchen with two modes:</p>
+  <div class="tip">
+    <strong>Analogy.</strong> When you first open the restaurant, the chef reads each recipe card
+    line-by-line and cooks as they read (<em>interpretation</em>). After hundreds of burger orders, the
+    chef has the burger recipe memorised and can cook it from muscle memory without reading the card
+    (<em>JIT compilation</em>). The first burger is slower because the chef was reading; all subsequent
+    burgers are much faster. That's exactly what the JVM does with your methods.
+  </div>
+
+  <p>More precisely:</p>
+  <ol>
+    <li>The JVM starts by <strong>interpreting</strong> bytecode — slow but requires zero setup time.</li>
+    <li>It <strong>counts</strong> how many times each method is called.</li>
+    <li>When a method crosses a threshold (~10,000 calls by default), the JIT compiler
+        <strong>translates it to native machine code</strong> and caches it.</li>
+    <li>Future calls go directly to the native code — no bytecode reading, no interpretation overhead.</li>
+    <li>If the JIT's assumptions break (e.g. a new subclass appears), it <strong>deoptimises</strong>
+        and falls back to the interpreter safely.</li>
+  </ol>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 760 180" role="img" aria-label="JVM execution lifecycle: bytecode starts interpreted, JIT compiles hot methods to native code after profiling">
+      <defs>
+        <marker id="jA" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" style="fill:var(--text-soft)"/>
+        </marker>
+      </defs>
+      <!-- boxes -->
+      <rect x="20"  y="60" width="110" height="50" rx="8" class="dg-box"/>
+      <text x="75"  y="82" text-anchor="middle" class="dg-text-sm">Bytecode</text>
+      <text x="75"  y="98" text-anchor="middle" class="dg-soft">(.class file)</text>
+      <rect x="170" y="60" width="120" height="50" rx="8" class="dg-accent"/>
+      <text x="230" y="82" text-anchor="middle" class="dg-text-sm">Interpreter</text>
+      <text x="230" y="98" text-anchor="middle" class="dg-soft">runs bytecode</text>
+      <rect x="330" y="60" width="130" height="50" rx="8" class="dg-accent"/>
+      <text x="395" y="82" text-anchor="middle" class="dg-text-sm">Profiler</text>
+      <text x="395" y="98" text-anchor="middle" class="dg-soft">counts hot calls</text>
+      <rect x="510" y="40" width="130" height="90" rx="8" class="dg-good-box"/>
+      <text x="575" y="68" text-anchor="middle" class="dg-text">JIT Compiler</text>
+      <text x="575" y="86" text-anchor="middle" class="dg-soft">compiles hot method</text>
+      <text x="575" y="104" text-anchor="middle" class="dg-soft">to native code</text>
+      <text x="575" y="120" text-anchor="middle" class="dg-soft">→ cached</text>
+      <!-- arrows -->
+      <line x1="130" y1="85" x2="168" y2="85" class="dg-line" marker-end="url(#jA)"/>
+      <line x1="290" y1="85" x2="328" y2="85" class="dg-line" marker-end="url(#jA)"/>
+      <line x1="460" y1="85" x2="508" y2="85" class="dg-line" marker-end="url(#jA)"/>
+      <!-- feedback arrow -->
+      <path d="M 575 130 Q 575 160 395 160 Q 230 160 230 112" fill="none" class="dg-line" marker-end="url(#jA)"/>
+      <text x="400" y="175" text-anchor="middle" class="dg-soft">next call hits native code directly</text>
+    </svg>
+    <figcaption>First few hundred calls are interpreted (slow) while the profiler counts them. Once a method
+    is "hot" the JIT compiles it to native machine code. All future calls skip the interpreter.</figcaption>
+  </figure>
+
+  <!-- ============================================================ -->
+  <h2 id="pipeline">2 · The full compilation pipeline</h2>
+  <p>Here is every step from source code to the native instructions actually running on your CPU:</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 760 260" role="img" aria-label="Full pipeline: Java source to javac to bytecode to JVM interpreter to profiler to C1 then C2 JIT to native code cache">
+      <defs>
+        <marker id="pA" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" style="fill:var(--text-soft)"/>
+        </marker>
+      </defs>
+      <!-- Row 1: source → bytecode -->
+      <rect x="20"  y="20"  width="120" height="44" rx="8" class="dg-box"/>
+      <text x="80"  y="40"  text-anchor="middle" class="dg-text-sm">Java source</text>
+      <text x="80"  y="56"  text-anchor="middle" class="dg-soft">(.java file)</text>
+      <rect x="200" y="20"  width="120" height="44" rx="8" class="dg-box"/>
+      <text x="260" y="40"  text-anchor="middle" class="dg-text-sm">Bytecode</text>
+      <text x="260" y="56"  text-anchor="middle" class="dg-soft">(.class file)</text>
+      <rect x="380" y="20"  width="120" height="44" rx="8" class="dg-accent"/>
+      <text x="440" y="40"  text-anchor="middle" class="dg-text-sm">Class loader</text>
+      <text x="440" y="56"  text-anchor="middle" class="dg-soft">verifies bytecode</text>
+      <rect x="560" y="20"  width="120" height="44" rx="8" class="dg-accent"/>
+      <text x="620" y="40"  text-anchor="middle" class="dg-text-sm">Interpreter</text>
+      <text x="620" y="56"  text-anchor="middle" class="dg-soft">tier 0 — slow</text>
+      <line x1="140" y1="42"  x2="198" y2="42"  class="dg-line" marker-end="url(#pA)"/>
+      <text x="169" y="36"   text-anchor="middle" class="dg-soft" style="font-size:10px">javac</text>
+      <line x1="320" y1="42"  x2="378" y2="42"  class="dg-line" marker-end="url(#pA)"/>
+      <line x1="500" y1="42"  x2="558" y2="42"  class="dg-line" marker-end="url(#pA)"/>
+
+      <!-- Row 2: tiered compilation -->
+      <rect x="20"  y="120" width="160" height="54" rx="8" class="dg-accent"/>
+      <text x="100" y="142" text-anchor="middle" class="dg-text-sm">C1 (client)</text>
+      <text x="100" y="158" text-anchor="middle" class="dg-soft">tier 1–3</text>
+      <text x="100" y="170" text-anchor="middle" class="dg-soft">fast compile, light opts</text>
+      <rect x="230" y="120" width="160" height="54" rx="8" class="dg-good-box"/>
+      <text x="310" y="142" text-anchor="middle" class="dg-text-sm">C2 (server)</text>
+      <text x="310" y="158" text-anchor="middle" class="dg-soft">tier 4</text>
+      <text x="310" y="170" text-anchor="middle" class="dg-soft">slow compile, aggressive opts</text>
+      <rect x="440" y="120" width="160" height="54" rx="8" class="dg-good-box"/>
+      <text x="520" y="142" text-anchor="middle" class="dg-text">Native code cache</text>
+      <text x="520" y="158" text-anchor="middle" class="dg-soft">compiled methods</text>
+      <text x="520" y="170" text-anchor="middle" class="dg-soft">run at CPU speed</text>
+
+      <!-- vertical from interpreter down -->
+      <line x1="620" y1="64"  x2="620" y2="100" class="dg-line"/>
+      <line x1="620" y1="100" x2="100" y2="100" class="dg-line"/>
+      <line x1="100" y1="100" x2="100" y2="118" class="dg-line" marker-end="url(#pA)"/>
+      <text x="370" y="96"  text-anchor="middle" class="dg-soft" style="font-size:10px">hot method → compile</text>
+      <line x1="180" y1="147" x2="228" y2="147" class="dg-line" marker-end="url(#pA)"/>
+      <text x="204" y="141" text-anchor="middle" class="dg-soft" style="font-size:10px">hotter</text>
+      <line x1="390" y1="147" x2="438" y2="147" class="dg-line" marker-end="url(#pA)"/>
+
+      <!-- deopt -->
+      <rect x="440" y="210" width="160" height="36" rx="8" class="dg-box"/>
+      <text x="520" y="232" text-anchor="middle" class="dg-text-sm">Deoptimise → Interpreter</text>
+      <line x1="520" y1="174" x2="520" y2="208" class="dg-line" marker-end="url(#pA)" stroke-dasharray="4,3"/>
+      <text x="548" y="197" class="dg-soft" style="font-size:10px">assumption</text>
+      <text x="548" y="207" class="dg-soft" style="font-size:10px">violated</text>
+    </svg>
+    <figcaption>Tiered compilation: the interpreter runs first (tier 0), C1 takes over after a few hundred
+    calls (tiers 1–3), and C2 kicks in for very hot code (tier 4). Deoptimisation safely reverts to the
+    interpreter when speculative assumptions break.</figcaption>
+  </figure>
+
+  <h3>What each tier does</h3>
+  <table class="data">
+    <tr><th>Tier</th><th>Who runs it</th><th>Profiling</th><th>Optimisations</th><th>When</th></tr>
+    <tr><td>0</td><td>Interpreter</td><td>Basic invocation counts</td><td>None</td><td>Startup — immediately</td></tr>
+    <tr><td>1</td><td>C1</td><td>None (full speed)</td><td>Simple</td><td>~100–200 invocations</td></tr>
+    <tr><td>2</td><td>C1</td><td>Invocation + back-edge</td><td>Simple</td><td>C2 compiler busy</td></tr>
+    <tr><td>3</td><td>C1</td><td>Full (type, branch, call)</td><td>Simple</td><td>~200–2,000 invocations</td></tr>
+    <tr><td>4</td><td>C2</td><td>Uses tier-3 profile</td><td>Aggressive</td><td>~10,000–15,000 invocations</td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="tiered">3 · Tiered compilation: C1 → C2</h2>
+  <p>Java 8+ uses <strong>tiered compilation</strong> by default — two separate JIT compilers, each
+  used at different points in a method's lifetime.</p>
+
+  <div class="ba">
+    <div class="before"><div class="ba-label">C1 — client compiler (fast &amp; light)</div>
+      <pre><code class="java">// C1 compiles this quickly and starts running faster code soon
+// Optimisations: simple inlining, register allocation, null-check elimination
+// Goal: reduce interpretation overhead quickly — even if the code isn't perfect yet
+// Used during: warm-up, short-lived CLIs, anything run &lt; ~10k times</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">C2 — server compiler (slow &amp; aggressive)</div>
+      <pre><code class="java">// C2 takes longer to compile but produces much better native code
+// Optimisations: deep inlining, escape analysis, loop unrolling,
+//   speculative devirtualization, dead code elimination, vectorization
+// Goal: maximum throughput for code that runs millions of times
+// Used for: tight loops, hot service paths, anything called &gt; ~10k times</code></pre>
+    </div>
+  </div>
+
+  <div class="tip"><strong>Rule of thumb:</strong> JIT warm-up takes a few seconds on a typical JVM.
+  Benchmarks that measure cold-start time are measuring interpreter speed, not JIT speed. Always warm up
+  before benchmarking (<a href="#friendly">§15</a>).</div>
+
+  <h3>See which tier a method is on (flag)</h3>
+  <pre><code class="java">// Run with: java -XX:+PrintCompilation MyApp
+// Output columns: timestamp  compile-id  flags  tier  class::method  size
+//
+//    337  114       3       java.lang.String::hashCode (67 bytes)   ← tier 3, C1
+//   1203  115 %     4       com.example.HotLoop::run @ 12 (88 bytes) ← tier 4, C2 (% = OSR)
+//
+// Flags:  %  on-stack replacement (OSR, see §10)
+//         !  method has exception handlers
+//         s  method is synchronized
+//         b  blocking compilation (uncommon)</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="profiling">4 · Profiling — how JIT finds hot code</h2>
+  <p>While the interpreter runs, the JVM collects three types of profiling data about every method:</p>
+
+  <table class="data">
+    <tr><th>Profile data</th><th>What it tracks</th><th>Used for</th></tr>
+    <tr><td>Invocation counter</td><td>How many times the method was called</td><td>Trigger C1/C2 compilation</td></tr>
+    <tr><td>Back-edge counter</td><td>How many times a loop re-entered its body</td><td>Trigger OSR for hot loops</td></tr>
+    <tr><td>Type profile</td><td>What concrete types appear at call sites and casts</td><td>Devirtualization, inlining</td></tr>
+    <tr><td>Branch profile</td><td>Which branch of an if/switch was taken, and how often</td><td>Dead code elimination, branch layout</td></tr>
+    <tr><td>Call-site profile</td><td>Which method was called at each virtual dispatch site</td><td>Monomorphic / bimorphic inlining</td></tr>
+  </table>
+
+  <pre><code class="java">// example: branch profile in action
+void process(Object o) {
+    if (o instanceof String s) {   // profiler records: "always String here (99.9%)"
+        doString(s);
+    } else {
+        doOther(o);                // profiler: "almost never taken"
+    }
+}
+// C2 will:
+//   1. inline doString() directly into process()
+//   2. mark the else branch as "uncommon trap" — if it ever fires, deoptimise
+//   3. eliminate the else code from the hot path entirely</code></pre>
+
+  <div class="note"><strong>Threshold tuning.</strong> The default C2 threshold is 10,000 invocations
+  (<code>-XX:CompileThreshold</code>). Lowering it compiles sooner but with less profile data — often
+  worse code. Raising it gathers more data but delays native speed. Leave it at the default unless you
+  have measured evidence that it's wrong.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="inlining">5 · Inlining — the biggest single win</h2>
+  <p>Inlining replaces a <em>call</em> to a method with a <em>copy</em> of the method's body inside the
+  caller. This eliminates the call overhead (stack frame setup, argument passing, return), but more
+  importantly it <strong>unlocks all the other optimisations</strong> that cross method boundaries.</p>
+
+  <div class="ba">
+    <div class="before"><div class="ba-label">Before inlining — two method calls at runtime</div>
+      <pre><code class="java">int getLength(String s) { return s.length(); }  // tiny method
+
+int totalLen = 0;
+for (String s : list) {
+    totalLen += getLength(s);   // call + stack frame + return on every iteration
+}
+// JVM must: push args, create stack frame, execute body, pop frame, return — every loop</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">After inlining — the body is copied in</div>
+      <pre><code class="java">// JIT effectively transforms the loop into:
+int totalLen = 0;
+for (String s : list) {
+    totalLen += s.length();   // no call overhead — body is right here
+}
+// Further: s.length() is a native field access, so this becomes a tight counter loop
+// Further still: loop body may be vectorized (SIMD) or unrolled</code></pre>
+    </div>
+  </div>
+
+  <h3>Inlining limits — when it stops</h3>
+  <table class="data">
+    <tr><th>Limit</th><th>Default</th><th>Flag</th></tr>
+    <tr><td>Max inline size (trivial methods always inlined)</td><td>35 bytes of bytecode</td><td><code>-XX:MaxInlineSize</code></td></tr>
+    <tr><td>Max inline size (hot methods)</td><td>325 bytes</td><td><code>-XX:FreqInlineSize</code></td></tr>
+    <tr><td>Max inline depth</td><td>9 levels</td><td><code>-XX:MaxInlineLevel</code></td></tr>
+  </table>
+  <pre><code class="java">// See what the JIT inlined (add to JVM args):
+// -XX:+UnlockDiagnosticVMOptions -XX:+PrintInlining
+//
+// Output:
+//   @ 12  com.example.Foo::bar (12 bytes)   inline (hot)
+//   @ 24  com.example.Foo::baz (400 bytes)  too large to inline
+//   @ 36  java.util.ArrayList::size (6 bytes) inline (trivial)</code></pre>
+
+  <div class="warn"><strong>Why large methods hurt performance:</strong> A method over 325 bytes
+  (bytecode) won't be inlined, even if it's called millions of times. Keep hot methods small and
+  focused — not because of code style, but because it enables inlining, which enables all the other
+  optimisations.</div>
+
+  <h3>Inlining virtual calls — the trick</h3>
+  <p>Virtual method calls look un-inlineable — you don't know which implementation to copy in. JIT uses
+  the <strong>type profile</strong> to cheat:</p>
+  <pre><code class="java">interface Shape { double area(); }
+class Circle  implements Shape { public double area() { return Math.PI * r * r; } }
+class Square  implements Shape { public double area() { return side * side; } }
+
+for (Shape s : shapes) {
+    total += s.area();   // virtual call — could be Circle or Square
+}
+
+// If the profiler saw 99.9% Circle here:
+// JIT emits:
+//   if (s.getClass() == Circle.class) {
+//       total += /* inlined Circle.area() body */;
+//   } else {
+//       total += s.area();   // rare slow path, or deopt trap
+//   }
+// → near-static call performance, with a safety net</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="escape">6 · Escape analysis &amp; stack allocation</h2>
+  <p>Normally every <code>new</code> allocates on the heap, which the GC must eventually collect.
+  <strong>Escape analysis</strong> proves whether an object can ever "escape" the method that created it.
+  If it can't, the JIT has two options:</p>
+
+  <table class="data">
+    <tr><th>Technique</th><th>What happens</th><th>Benefit</th></tr>
+    <tr><td>Stack allocation</td><td>Object lives on the stack, freed automatically when method returns</td><td>Zero GC pressure</td></tr>
+    <tr><td>Scalar replacement</td><td>Object fields are held in CPU registers / local variables — no object at all</td><td>No memory allocation, no GC</td></tr>
+    <tr><td>Lock elision</td><td>Synchronized on an object only one thread ever touches — lock removed</td><td>No synchronisation cost</td></tr>
+  </table>
+
+  <div class="ba">
+    <div class="before"><div class="ba-label">Code you write — looks like a heap allocation</div>
+      <pre><code class="java">double computeDistance(double x1, double y1, double x2, double y2) {
+    Point p1 = new Point(x1, y1);   // ← heap allocation?
+    Point p2 = new Point(x2, y2);   // ← heap allocation?
+    return p1.distanceTo(p2);
+    // p1 and p2 never leave this method — they don't escape
+}</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">What JIT actually executes (scalar replacement)</div>
+      <pre><code class="java">double computeDistance(double x1, double y1, double x2, double y2) {
+    // Point objects eliminated entirely — fields kept in registers:
+    double dx = x2 - x1;
+    double dy = y2 - y1;
+    return Math.sqrt(dx*dx + dy*dy);
+    // Zero heap allocations. Zero GC. Just floating-point math.
+}</code></pre>
+    </div>
+  </div>
+
+  <pre><code class="java">// Verify escape analysis is on (it is by default):
+// -XX:+DoEscapeAnalysis  (default: true)
+
+// Lock elision example:
+void addItem(String item) {
+    List&lt;String&gt; local = new ArrayList&lt;&gt;();  // list doesn't escape
+    synchronized (local) {                    // ← this lock is elided entirely
+        local.add(item);
+    }
+    process(local);  // still local to this call — no escape
+}
+// After JIT: synchronized block is a no-op, lock acquire/release removed</code></pre>
+
+  <div class="warn"><strong>What breaks escape analysis.</strong> If you store the object in a field,
+  return it, pass it to another thread, or pass it to a method the JIT can't inline — the object
+  escapes and must stay on the heap. Keep objects local to help the JIT prove non-escape.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="devirt">7 · Devirtualization &amp; speculative optimisation</h2>
+  <p>Java's polymorphism means most method calls are <em>virtual</em> — the JVM must look up which
+  implementation to call at runtime. JIT uses profiling to make educated guesses and hard-code the
+  most likely target.</p>
+
+  <h3>Three levels of call-site optimisation</h3>
+  <table class="data">
+    <tr><th>Pattern seen</th><th>Optimisation</th><th>Result</th></tr>
+    <tr><td>Only one concrete type seen (monomorphic)</td><td>Inline the single implementation, guard type check</td><td>Near-static performance</td></tr>
+    <tr><td>Two concrete types seen (bimorphic)</td><td>Two inlined branches, pick by type</td><td>Good performance</td></tr>
+    <tr><td>Three or more types (megamorphic)</td><td>No inlining — use vtable dispatch</td><td>Full virtual overhead</td></tr>
+  </table>
+
+  <pre><code class="java">// monomorphic → JIT inlines (fast)
+List&lt;String&gt; list = new ArrayList&lt;&gt;();   // always ArrayList
+list.add("x");   // JIT knows: always ArrayList.add() → inlines it
+
+// megamorphic → JIT can't inline (slower)
+List&lt;String&gt; list = getList();  // could return ArrayList, LinkedList, CopyOnWriteArrayList...
+list.add("x");   // JIT gives up inlining — uses vtable lookup</code></pre>
+
+  <h3>Speculative optimisation + deoptimisation guard</h3>
+  <pre><code class="java">// JIT emits something like this for a monomorphic call site:
+if (obj.getClass() != ArrayList.class) {
+    // uncommon trap — if this fires, deoptimise back to interpreter
+    uncommon_trap();
+}
+// inlined ArrayList.add() body here (fast path, no vtable)
+
+// If a new type appears later (e.g. LinkedList is added to the same variable):
+// → the guard fires → deoptimise → recompile with bimorphic or megamorphic dispatch</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="loops">8 · Loop optimisations</h2>
+  <p>Loops are where most CPU time is spent, so C2 applies several transformations to them.</p>
+
+  <h3>8.1 · Loop unrolling — reduce branch overhead</h3>
+  <pre><code class="java">// What you write:
+for (int i = 0; i &lt; 1000; i++) {
+    sum += arr[i];
+}
+
+// What C2 may emit (4× unrolled — simplified):
+for (int i = 0; i &lt; 1000; i += 4) {
+    sum += arr[i];
+    sum += arr[i+1];
+    sum += arr[i+2];
+    sum += arr[i+3];
+}
+// Benefit: 4× fewer loop-back branches, better CPU pipeline utilisation</code></pre>
+
+  <h3>8.2 · Vectorisation (SIMD) — one instruction, multiple data</h3>
+  <pre><code class="java">// What you write:
+for (int i = 0; i &lt; n; i++) {
+    result[i] = a[i] + b[i];
+}
+
+// What C2 may emit (using AVX2 — 8 ints at once):
+// VPADDD ymm0, [a+i*4], [b+i*4]   ← adds 8 integers in a single CPU instruction
+// Benefit: 4–8× throughput for numeric loops (depends on CPU and array size)
+// Requires: no aliasing, no exceptions, simple loop body</code></pre>
+
+  <h3>8.3 · Range-check elimination</h3>
+  <pre><code class="java">// Every array access arr[i] normally generates a bounds check:
+//   if (i &lt; 0 || i &gt;= arr.length) throw ArrayIndexOutOfBoundsException;
+
+// C2 proves that inside for(int i=0; i&lt;arr.length; i++) the index is always valid:
+// → removes ALL bounds checks inside the loop
+// → the check only happens once at the loop entry guard
+
+// This is why iterating a plain array is faster than you might expect</code></pre>
+
+  <h3>8.4 · Loop invariant hoisting</h3>
+  <pre><code class="java">// What you write:
+for (int i = 0; i &lt; list.size(); i++) {   // list.size() called every iteration
+    process(list.get(i));
+}
+
+// What C2 does (hoists the invariant):
+int size = list.size();                    // computed once, before the loop
+for (int i = 0; i &lt; size; i++) {
+    process(list.get(i));
+}
+// Benefit: one less method call per iteration (even though size() is trivial)</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="deopt">9 · Deoptimisation — when JIT bails out</h2>
+  <p>JIT compiles code based on <em>assumptions</em> derived from profiling. When those assumptions are
+  violated at runtime, the JVM performs a <strong>deoptimisation</strong>: it throws away the compiled
+  code for that method and falls back to the interpreter, then recompiles later with updated information.</p>
+
+  <h3>Common deoptimisation triggers</h3>
+  <table class="data">
+    <tr><th>Trigger</th><th>Example</th></tr>
+    <tr><td>New subclass loaded</td><td>JIT inlined <code>Animal.speak()</code> assuming only <code>Dog</code>; then <code>Cat</code> is loaded</td></tr>
+    <tr><td>Uncommon trap fires</td><td>A branch the profiler said was "never taken" actually executes</td></tr>
+    <tr><td>Class re-initialisation</td><td>A static field the JIT treated as constant is changed via reflection</td></tr>
+    <tr><td>Bytecode patched</td><td>A Java agent or debugger modifies bytecode at runtime</td></tr>
+    <tr><td>Null check failed after elision</td><td>JIT removed a null check; a null appears</td></tr>
+  </table>
+
+  <pre><code class="java">// Deoptimisation is safe — the JVM can always reconstruct the interpreter state
+// from the compiled frame at any safepoint.
+
+// You can observe deoptimisations:
+// java -XX:+TraceDeoptimization MyApp
+// Output:
+//   Uncommon trap occurred in com.example.Foo.bar() @ bci 12 reason=class_check action=reinterpret
+
+// Frequent deoptimisations are a performance red flag — they cause:
+//   1. Repeated recompilation
+//   2. Interpreter overhead during recompile window
+//   3. Possible "deoptimisation storms" in heavily polymorphic code</code></pre>
+
+  <div class="tip"><strong>How to trigger a deoptimisation on purpose (for learning):</strong>
+  Call a method 20,000 times with one type (so C2 inlines it), then call it with a different type.
+  The guard fires, deoptimisation occurs, and you can observe it with <code>-XX:+TraceDeoptimization</code>.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="osr">10 · On-Stack Replacement (OSR)</h2>
+  <p>Normal JIT compilation takes effect on the <em>next call</em> to the compiled method. But what if
+  you have one enormous long-running loop that runs for minutes? You'd be stuck in the interpreter for
+  the whole duration. <strong>OSR</strong> solves this.</p>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 760 160" role="img" aria-label="OSR: the JVM can swap out the interpreter frame mid-loop and replace it with a compiled frame, without waiting for the next method call">
+      <defs>
+        <marker id="osrA" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" style="fill:var(--text-soft)"/>
+        </marker>
+      </defs>
+      <rect x="20"  y="30" width="180" height="60" rx="8" class="dg-accent"/>
+      <text x="110" y="55" text-anchor="middle" class="dg-text-sm">Loop running</text>
+      <text x="110" y="71" text-anchor="middle" class="dg-soft">in interpreter (slow)</text>
+      <text x="110" y="85" text-anchor="middle" class="dg-soft">back-edge counter fires</text>
+      <rect x="280" y="30" width="200" height="60" rx="8" class="dg-accent"/>
+      <text x="380" y="55" text-anchor="middle" class="dg-text-sm">JIT compiles the loop</text>
+      <text x="380" y="71" text-anchor="middle" class="dg-soft">mid-flight (in background)</text>
+      <text x="380" y="85" text-anchor="middle" class="dg-soft">produces an OSR entry point</text>
+      <rect x="560" y="20" width="180" height="80" rx="8" class="dg-good-box"/>
+      <text x="650" y="48" text-anchor="middle" class="dg-text-sm">Loop continues</text>
+      <text x="650" y="64" text-anchor="middle" class="dg-soft">in compiled code (fast)</text>
+      <text x="650" y="80" text-anchor="middle" class="dg-soft">same iteration, no restart</text>
+      <text x="650" y="94" text-anchor="middle" class="dg-soft">state transferred</text>
+      <line x1="200" y1="60" x2="278" y2="60" class="dg-line" marker-end="url(#osrA)"/>
+      <line x1="480" y1="60" x2="558" y2="60" class="dg-line" marker-end="url(#osrA)"/>
+    </svg>
+    <figcaption>OSR happens at a <em>back-edge</em> — the point where the loop jumps back to the top.
+    The JVM transfers the live interpreter state (local variables, stack) to the compiled frame and
+    continues from the same loop iteration, now running native code.</figcaption>
+  </figure>
+
+  <pre><code class="java">// OSR is visible in -XX:+PrintCompilation output as the % flag:
+//   1203  115 %     4     com.example.Crunch::run @ 12 (88 bytes)
+//         ↑ %                                     ↑ bytecode index of OSR entry point
+//   This means: OSR compilation at tier 4, entering the loop at bytecode 12
+
+// OSR is the reason a tight benchmark loop "speeds up" after a second or two:
+long sum = 0;
+for (int i = 0; i &lt; 100_000_000; i++) {   // back-edge counter fires ~10k iterations in
+    sum += i;                               // JIT compiles via OSR, rest of loop is native
+}
+System.out.println(sum);</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="codecache">11 · Code cache</h2>
+  <p>Compiled native methods are stored in a fixed-size region of memory called the <strong>code
+  cache</strong>. If it fills up, the JVM stops JIT-compiling new methods — everything runs in the
+  interpreter or at the last tier it reached.</p>
+
+  <pre><code class="java">// Default sizes (64-bit JVM, Java 11+)
+// -XX:ReservedCodeCacheSize=240m   (total size reserved)
+// -XX:InitialCodeCacheSize=2496k   (initial committed)
+
+// Warning you'll see if it fills:
+// "CodeCache is full. Compiler has been disabled."
+// "Try increasing the code cache size using -XX:ReservedCodeCacheSize="
+
+// Check code cache usage at runtime (JMX / JConsole → Memory → Code Cache)
+// or: jcmd &lt;pid&gt; Compiler.codecache
+
+// Three segmented code heaps (Java 9+ with tiered compilation):
+// NonNMethods:   JVM internal / glue code
+// NonProfiled:   tier 2/3 C1 code (has profile counters removed)
+// Profiled:      tier 3 C1 code with profiling still active
+
+// If only Profiled fills: methods get stuck at tier 3, never promoted to C2
+// Solution: -XX:ReservedCodeCacheSize=512m   (or profile with JFR to find waste)</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="graal">12 · GraalVM JIT vs C2</h2>
+  <p>GraalVM ships an alternative JIT compiler — the <strong>Graal compiler</strong> — written in Java
+  itself. It replaces C2 but keeps C1.</p>
+
+  <table class="data">
+    <tr><th></th><th>C2 (HotSpot default)</th><th>Graal (GraalVM)</th></tr>
+    <tr><td>Written in</td><td>C++</td><td>Java</td></tr>
+    <tr><td>Optimisation depth</td><td>Very good</td><td>Excellent (especially for partial evaluation)</td></tr>
+    <tr><td>Warm-up time</td><td>Faster</td><td>Slightly slower</td></tr>
+    <tr><td>Peak throughput</td><td>Excellent</td><td>Often 5–15% better on complex code</td></tr>
+    <tr><td>Enables</td><td>Normal JIT</td><td>JIT + <code>native-image</code> (AOT) + Truffle</td></tr>
+    <tr><td>Use via</td><td>Default HotSpot JVM</td><td>GraalVM distribution or <code>-XX:+UseJVMCICompiler</code></td></tr>
+  </table>
+
+  <pre><code class="java">// Enable Graal JIT on a standard JDK 11+ (experimental):
+// java -XX:+UnlockExperimentalVMOptions -XX:+UseJVMCICompiler -jar app.jar
+
+// GraalVM CE/EE ships with Graal as the default JIT:
+// gu install native-image
+// native-image -jar app.jar   ← AOT: no JIT at all, instant startup</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="aot">13 · AOT vs JIT — tradeoffs</h2>
+  <p><strong>Ahead-Of-Time (AOT)</strong> compilation (e.g. GraalVM <code>native-image</code>, or the
+  AOT cache added incrementally from Java 17) compiles bytecode to native code <em>before</em> the
+  program runs. This eliminates warm-up but loses runtime adaptability.</p>
+
+  <table class="data">
+    <tr><th></th><th>JIT (default HotSpot)</th><th>AOT (native-image)</th></tr>
+    <tr><td>Startup time</td><td>Slow (seconds to warm up)</td><td>Instant (milliseconds)</td></tr>
+    <tr><td>Peak throughput</td><td>Highest — adapts to real data</td><td>Lower — compiled without runtime data</td></tr>
+    <tr><td>Memory footprint</td><td>Larger (JVM + code cache)</td><td>Smaller (no JVM overhead)</td></tr>
+    <tr><td>Dynamic class loading</td><td>Full support</td><td>Limited — closed-world assumption</td></tr>
+    <tr><td>Reflection / proxies</td><td>Full support</td><td>Requires config or Reachability Metadata</td></tr>
+    <tr><td>Best for</td><td>Long-running servers, batch, anything running &gt; 30s</td><td>CLIs, serverless FaaS, containers needing fast startup</td></tr>
+  </table>
+
+  <pre><code class="java">// JIT warm-up profile (typical web service):
+//   t=0s   → cold interpreter  (10–50× slower than peak)
+//   t=5s   → C1 compiled       (~3–5× slower than peak)
+//   t=30s  → C2 compiled       (at or near peak throughput)
+//   t=∞    → steady state
+
+// AOT profile (GraalVM native-image):
+//   t=0ms  → already at peak   (but peak is lower than JIT peak)
+//   t=∞    → same steady state</code></pre>
+
+  <div class="note">Java 24+ ships an <strong>AOT cache</strong> (<code>java -XX:AOTCache=app.aot</code>)
+  that stores C2-compiled code from a training run and replays it in future JVM starts — getting near-AOT
+  startup without the closed-world constraints of native-image. See the
+  <a href="aot-cache.html">AOT Cache deep dive</a>.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="tools">14 · Observing the JIT (tools &amp; flags)</h2>
+
+  <h3>14.1 · PrintCompilation — see every compilation event</h3>
+  <pre><code class="java">// JVM flag: -XX:+PrintCompilation
+// Sample output:
+//    45   1    b   1  java.lang.String::hashCode (67 bytes)
+//   301  89       3  com.example.Foo::compute (112 bytes)
+//   512 113 %     4  com.example.Crunch::run @ 22 (200 bytes)
+//
+// Column 1: timestamp (ms since start)
+// Column 2: compile id (unique per compilation)
+// Column 3: flags (%=OSR, !=exception handler, s=synchronized, b=blocking, n=native)
+// Column 4: tier (1=C1 no profiling, 2=C1 limited, 3=C1 full profiling, 4=C2)
+// Column 5: class::method (bytes = bytecode size)</code></pre>
+
+  <h3>14.2 · JITWatch — visual compilation analysis</h3>
+  <pre><code class="java">// JITWatch (github.com/AdoptOpenJDK/jitwatch) reads the compilation log and shows:
+//   - Which methods were compiled and at what tier
+//   - The inlining tree for each compiled method
+//   - The assembly output (disassembly of the native code)
+//   - Timing of compilation events
+//   - Deoptimisations
+//
+// Generate the log file:
+// java -XX:+UnlockDiagnosticVMOptions \
+//      -XX:+LogCompilation \
+//      -XX:LogFile=hotspot.log \
+//      -jar your-app.jar
+//
+// Then open hotspot.log in JITWatch.</code></pre>
+
+  <h3>14.3 · Hsdis — native assembly disassembly</h3>
+  <pre><code class="java">// To see the actual x86/ARM assembly the JIT produced:
+// 1. Download hsdis library for your platform (part of OpenJDK build)
+// 2. Place hsdis-amd64.so next to the JVM
+// 3. Run:
+java -XX:+UnlockDiagnosticVMOptions \
+     -XX:+PrintAssembly \
+     -XX:CompileCommand=print,com.example.Foo::hotMethod \
+     MyApp
+// Output: Intel AT&amp;T syntax assembly for the JIT-compiled method</code></pre>
+
+  <h3>14.4 · JFR — low-overhead production profiling</h3>
+  <pre><code class="java">// Java Flight Recorder captures JIT events with &lt;2% overhead:
+java -XX:StartFlightRecording=filename=jit.jfr,duration=60s \
+     -XX:FlightRecorderOptions=stackdepth=128 \
+     MyApp
+
+// JFR events for JIT:
+//   jdk.Compilation       — each compile, duration, tier
+//   jdk.CompilerPhase     — internal phases (parsing, inlining, code gen)
+//   jdk.CodeCacheStatistics — cache fullness
+//   jdk.Deoptimization    — when and why a deopt happened
+
+// Open in JDK Mission Control (JMC) for a GUI view</code></pre>
+
+  <h3>14.5 · Useful diagnostic flags</h3>
+  <table class="data">
+    <tr><th>Flag</th><th>What it shows</th></tr>
+    <tr><td><code>-XX:+PrintCompilation</code></td><td>Every compilation event (method, tier, size)</td></tr>
+    <tr><td><code>-XX:+PrintInlining</code></td><td>Inlining decisions (requires <code>+UnlockDiagnosticVMOptions</code>)</td></tr>
+    <tr><td><code>-XX:+PrintAssembly</code></td><td>Disassembled native code (requires hsdis)</td></tr>
+    <tr><td><code>-XX:+LogCompilation</code></td><td>Full compilation log → XML file (read by JITWatch)</td></tr>
+    <tr><td><code>-XX:+TraceDeoptimization</code></td><td>Every deoptimisation event + reason</td></tr>
+    <tr><td><code>-XX:CompileThreshold=N</code></td><td>Override invocation count needed to trigger C2</td></tr>
+    <tr><td><code>-XX:ReservedCodeCacheSize=Nm</code></td><td>Increase code cache (default 240 MB)</td></tr>
+    <tr><td><code>-Xcomp</code></td><td>Force compile everything on first call (kills profiling — don't use in prod)</td></tr>
+    <tr><td><code>-Xint</code></td><td>Interpreter-only mode — disables JIT entirely (for testing/debugging)</td></tr>
+    <tr><td><code>-XX:+TieredCompilation</code></td><td>Enable tiered compilation (default true since Java 8)</td></tr>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="friendly">15 · Writing JIT-friendly code</h2>
+  <p>You don't need to think about JIT for most code. These rules help when performance matters.</p>
+
+  <h3>15.1 · Keep hot methods small</h3>
+  <pre><code class="java">// Bad: one giant method — won't be inlined anywhere
+void processOrder(Order o) {
+    // 400+ lines of validation, calculation, persistence, logging
+}
+
+// Good: small focused methods — each can be inlined by callers
+void processOrder(Order o) {
+    validate(o);        // 20 lines → inlineable
+    calculate(o);       // 30 lines → inlineable
+    persist(o);         // 25 lines → inlineable
+    audit(o);           // 15 lines → inlineable
+}</code></pre>
+
+  <h3>15.2 · Prefer monomorphic call sites</h3>
+  <pre><code class="java">// Bad: megamorphic — JIT can't inline
+List&lt;?&gt; list = getAnyList();   // ArrayList, LinkedList, or CopyOnWriteArrayList?
+list.size();                    // vtable dispatch, no inlining
+
+// Good: known type — JIT inlines aggressively
+ArrayList&lt;String&gt; list = new ArrayList&lt;&gt;();
+list.size();   // always ArrayList → inlined to a field read</code></pre>
+
+  <h3>15.3 · Don't use reflection in hot loops</h3>
+  <pre><code class="java">// Bad: reflection bypasses JIT inlining
+Method m = clazz.getMethod("getValue");
+for (Item item : items) {
+    Object val = m.invoke(item);   // opaque to JIT — can't inline, can't optimise
+}
+
+// Good: use a direct call or a functional interface
+Function&lt;Item, Object&gt; getter = Item::getValue;   // JIT can inline this
+for (Item item : items) {
+    Object val = getter.apply(item);
+}</code></pre>
+
+  <h3>15.4 · Warm up before benchmarking</h3>
+  <pre><code class="java">// Use JMH (Java Microbenchmark Harness) — handles warm-up automatically
+@Benchmark
+@Warmup(iterations = 5, time = 1)    // 5 × 1s warm-up rounds
+@Measurement(iterations = 10, time = 1)
+public int measure() {
+    return hotMethod();
+}
+
+// Without JMH, warm up manually:
+// 1. Run the method 20,000+ times before recording timing
+// 2. Never trust the first N seconds of latency numbers
+for (int i = 0; i &lt; 50_000; i++) hotMethod();   // warm-up
+long start = System.nanoTime();
+for (int i = 0; i &lt; 1_000_000; i++) hotMethod(); // benchmark
+System.out.println((System.nanoTime() - start) / 1_000_000 + " ms");</code></pre>
+
+  <h3>15.5 · Avoid object allocation in tight loops (when profiling says so)</h3>
+  <pre><code class="java">// Bad: allocates a new StringBuilder every iteration
+List&lt;String&gt; result = new ArrayList&lt;&gt;();
+for (String s : lines) {
+    result.add(new StringBuilder(s).reverse().toString());   // alloc + GC pressure
+}
+
+// Better: reuse (but check if escape analysis already handles it before optimising)
+StringBuilder sb = new StringBuilder();
+for (String s : lines) {
+    sb.setLength(0);
+    result.add(sb.append(s).reverse().toString());
+}
+// Note: always profile first — escape analysis may already elide the allocation</code></pre>
+
+  <h3>15.6 · Avoid synchronization on local (per-thread) objects</h3>
+  <pre><code class="java">// Don't do this: JIT may not prove the lock isn't shared if the object leaks
+synchronized (new Object()) { ... }   // JIT elides this — it's on a new object
+
+// Lock elision only works when the object genuinely doesn't escape
+// If you pass it to another method the JIT can't inline, the lock stays</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="cheat">Cheat sheet</h2>
+  <div class="cheat">
+    <h3>JIT compilation in one glance</h3>
+    <table class="data">
+      <tr><th>Concept</th><th>What to remember</th></tr>
+      <tr><td>Tiers</td><td>0=interpreted → 1-3=C1 (fast/light) → 4=C2 (slow/aggressive)</td></tr>
+      <tr><td>Default C2 threshold</td><td>~10,000 invocations (<code>-XX:CompileThreshold</code>)</td></tr>
+      <tr><td>Biggest win</td><td>Method inlining — enables all other optimisations</td></tr>
+      <tr><td>Inline limit</td><td>35 bytes (normal) / 325 bytes (hot) — keep hot methods small</td></tr>
+      <tr><td>Escape analysis</td><td>Local objects → stack / registers, zero GC pressure</td></tr>
+      <tr><td>Devirtualization</td><td>Monomorphic = inlined; megamorphic = vtable dispatch</td></tr>
+      <tr><td>Loop opts</td><td>Unrolling, SIMD vectorization, range-check elimination, hoisting</td></tr>
+      <tr><td>Deoptimisation</td><td>Safe fallback when assumptions break — triggers recompilation</td></tr>
+      <tr><td>OSR</td><td>Compiles a running loop mid-flight via back-edge counter</td></tr>
+      <tr><td>Code cache</td><td>Fixed region for compiled code; default 240 MB; if full, JIT stops</td></tr>
+      <tr><td>GraalVM</td><td>Alternative JIT in Java; also enables native-image AOT</td></tr>
+      <tr><td>Diagnose</td><td><code>-XX:+PrintCompilation</code>, JITWatch, JFR <code>jdk.Compilation</code></td></tr>
+      <tr><td>Benchmarking</td><td>Always warm up 20k+ calls before measuring; use JMH</td></tr>
+    </table>
+
+    <h3>JIT-friendly code checklist</h3>
+    <ul>
+      <li>Keep hot methods under 35 bytes of bytecode (check with <code>-XX:+PrintInlining</code>).</li>
+      <li>Prefer concrete types over interfaces at hot call sites → monomorphic dispatch → inlining.</li>
+      <li>Avoid reflection in hot loops — it blocks inlining.</li>
+      <li>Let objects stay local to methods — escape analysis eliminates heap allocations.</li>
+      <li>Trust the JIT before manually "optimising" — profile first with JFR or async-profiler.</li>
+      <li>Never benchmark without warm-up. Use JMH.</li>
+    </ul>
+  </div>
+
+  <div class="note">
+    <strong>Related pages:</strong>
+    <a href="jvm-memory-gc.html">JVM Memory &amp; GC</a> (how the heap and GC interact with JIT-allocated objects) ·
+    <a href="aot-cache.html">AOT Cache</a> (pre-warming the JIT across JVM restarts) ·
+    <a href="jfr.html">JFR &amp; Mission Control</a> (production profiling, including JIT events).
+  </div>
+</main>
+<script src="../assets/nav.js"></script>
+<script src="../assets/highlight.js"></script>
+</body>
+</html>
