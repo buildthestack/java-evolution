@@ -52,6 +52,7 @@
     <a href="#aot">13. AOT vs JIT — tradeoffs</a>
     <a href="#tools">14. Observing the JIT (tools &amp; flags)</a>
     <a href="#friendly">15. Writing JIT-friendly code</a>
+    <a href="#versions">16. JIT improvements by version (Java 17 → 27)</a>
     <a href="#cheat">Cheat sheet</a>
   </div>
 
@@ -784,6 +785,160 @@ synchronized (new Object()) { ... }   // JIT elides this — it's on a new objec
 
 // Lock elision only works when the object genuinely doesn't escape
 // If you pass it to another method the JIT can't inline, the lock stays</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="versions">16 · JIT improvements by version (Java 17 → 27)</h2>
+  <p>
+    HotSpot's JIT evolves with every release. This section tracks the changes that matter most —
+    from compiler architecture shifts to the Project Leyden AOT cache that fundamentally changes
+    the cold-start story.
+  </p>
+
+  <h3>Java 17 (LTS, Sept 2021)</h3>
+  <div class="note">
+    <strong>Biased locking removed</strong> (JEP 374, removed in 15, finalized off in 17).
+    Biased locking was a JIT-level optimization that assumed a lock would only ever be acquired by
+    one thread. In practice it caused frequent <em>revocation</em> pauses (stopping threads to
+    retract the bias) that cost more than they saved on modern hardware. Removing it simplified the
+    JIT's lock handling and eliminated an entire category of unexpected pauses.
+  </div>
+  <p>
+    <strong>Sealed classes</strong> (JEP 409) help the JIT devirtualize more aggressively. Because
+    the compiler knows the exact closed set of subclasses at compile time, C2 can inline all
+    permitted implementations and eliminate the virtual dispatch entirely — no speculative guard
+    needed.
+  </p>
+  <p>
+    <strong>Vector API</strong> (JEP 338, incubating since Java 16, continued in 17) lets you
+    express SIMD computations explicitly. The JIT maps them to the best available CPU instructions
+    — AVX2/AVX-512 on x86, NEON on ARM — rather than relying on auto-vectorization to spot the
+    pattern itself. Useful for numeric, ML, and crypto workloads.
+  </p>
+  <pre><code class="java">// Vector API (incubator) — tells JIT exactly what SIMD shape you want
+var species = FloatVector.SPECIES_256;            // 8 floats × 256-bit AVX
+var va = FloatVector.fromArray(species, a, i);
+var vb = FloatVector.fromArray(species, b, i);
+va.mul(vb).add(vc).intoArray(result, i);          // JIT → single VFMADD256 instruction</code></pre>
+
+  <h3>Java 21 (LTS, Sept 2023)</h3>
+  <p>
+    <strong>Virtual threads</strong> (JEP 444) are compiled and optimised by JIT exactly like
+    platform threads. The key insight: <code>Continuation.yield()</code> — the mechanism that
+    unmounts a virtual thread from its carrier — is compiled to native code; the JIT can inline
+    through it. This means business logic running on virtual threads gets the same inlining and
+    escape-analysis wins as ordinary code.
+  </p>
+  <p>
+    <strong>Generational ZGC</strong> (JEP 439) completes ZGC's design. Shorter GC pauses (sub-10 ms)
+    mean fewer interruptions to JIT-compiled code paths — especially important for latency-sensitive
+    services where GC safepoints were the main obstacle to consistent throughput.
+  </p>
+  <p>
+    <strong>GraalVM for JDK 21</strong> shipped with improved polymorphic inlining and more
+    aggressive dead-code elimination vs JDK 17. Benchmarks (Ionut Balosin, 2024) show Oracle GraalVM
+    JIT consistently outperforming C2 on workloads with virtual dispatch, TLAB allocation, and
+    lock coarsening. C2 still wins on simple numeric/loop-heavy code thanks to its loop-unrolling
+    factor of 16.
+  </p>
+
+  <h3>Java 24 (March 2025) — Project Leyden Phase 1</h3>
+  <p>
+    <strong>JEP 483 — Ahead-of-Time Class Loading &amp; Linking.</strong> The first piece of
+    Project Leyden lands in production. Run your app once with
+    <code>-XX:AOTCacheOutput=app.aot</code>; on subsequent runs with
+    <code>-XX:AOTCache=app.aot</code>, the JVM skips class loading and linking entirely — those
+    costs are pre-paid. This isn't compilation yet, but it shifts work earlier and lets the JIT
+    start profiling sooner.
+  </p>
+  <pre><code class="bash"># Step 1 — training run (saves class-load + link state)
+java -XX:AOTCacheOutput=app.aot -jar myapp.jar
+
+# Step 2 — production run (reuses cached state)
+java -XX:AOTCache=app.aot -jar myapp.jar</code></pre>
+
+  <h3>Java 25 (LTS, Sept 2025) — Project Leyden Phase 2</h3>
+  <p>
+    Two new AOT JEPs turn the cache into a JIT accelerator:
+  </p>
+  <table class="data">
+    <tr><th>JEP</th><th>What it caches</th><th>JIT impact</th></tr>
+    <tr>
+      <td><strong>JEP 514</strong> — AOT Command-Line Ergonomics</td>
+      <td>Collapses the three-step workflow (train + assemble + run) into two steps</td>
+      <td>Lower barrier to adoption; more apps actually use the cache</td>
+    </tr>
+    <tr>
+      <td><strong>JEP 515</strong> — AOT Method Profiling</td>
+      <td>Invocation &amp; type profiles of hot methods from a training run</td>
+      <td>JIT starts generating C2-quality native code <em>immediately at startup</em> instead of waiting for the profiling warmup period</td>
+    </tr>
+  </table>
+  <div class="tip">
+    <strong>Real-world impact.</strong> A Spring Boot 3.3+ application measured startup falling from
+    <strong>4.9 s → 2.4 s</strong> (51% faster) using nothing but the JDK 25 AOT cache. A Quarkus
+    service ("SwiftShip") saw median readiness drop from 1,022 ms → 380 ms (63% faster). No native
+    image, no framework changes — just two JVM flags.
+  </div>
+
+  <h3>Java 26 (March 2026) — Project Leyden Phase 3 + vectorization wins</h3>
+  <p>
+    <strong>JEP 516 — AOT Object Caching with Any GC.</strong> Pre-serialized heap objects
+    (interned strings, class mirrors, singleton instances) are restored from the cache at startup.
+    This release also removes the previous restriction that AOT caching only worked with G1 — ZGC
+    now works too.
+  </p>
+  <p>
+    <strong>Vectorization cost-model fix.</strong> JDK 26 corrects inconsistent vectorization of
+    reduction patterns (sum, dot-product, min/max loops). Previous versions were too conservative
+    and skipped SIMD for many loops; the improved cost model delivers <strong>up to 4× speedups</strong>
+    on workloads where JDK 21 declined to vectorize.
+  </p>
+  <p>
+    <strong>Leaner JIT output.</strong> Reduced interaction with G1's write barriers during code
+    generation cuts JIT compilation time by <strong>~5–15%</strong> and generated native code size
+    by <strong>~5–10%</strong> vs JDK 21 — meaning the code cache fills more slowly and you get
+    more methods compiled per MB of cache.
+  </p>
+
+  <h3>Java 27 (Sept 2026) — JVMCI removed + compact headers</h3>
+  <div class="warn">
+    <strong>Breaking change for GraalVM CE users.</strong> The experimental JVM Compiler Interface
+    (JVMCI) — the hook that allowed a Java-written JIT (GraalVM CE) to plug into HotSpot — is
+    <strong>removed in Java 27</strong> (along with modules <code>jdk.internal.vm.ci</code>,
+    <code>jdk.graal.compiler</code>, and the <code>-XX:+UseGraalJIT</code> flag). GraalVM CE now
+    ships as its own separate JDK distribution rather than as a plug-in to OpenJDK. If you relied
+    on <code>-XX:+UseGraalJIT</code>, you must switch to the GraalVM JDK distribution.
+  </div>
+  <p>
+    <strong>JEP 534 — Compact Object Headers (on by default).</strong> Object headers shrink from
+    96 bits to 64 bits. The JIT benefit is indirect but significant: heap is ~20% smaller, GC
+    collections happen less often, and safepoint pauses (which halt all JIT-compiled threads)
+    become rarer. For allocation-heavy workloads, throughput improves without touching a single
+    line of application code.
+  </p>
+  <p>
+    <strong>JEP 523 — G1 is now the universal default GC</strong>, even in resource-constrained
+    containers and small heaps that previously fell back to Serial GC. G1's concurrent marking
+    keeps JIT-compiled code running during most of the collection cycle.
+  </p>
+
+  <h3>Version comparison at a glance</h3>
+  <table class="data">
+    <tr><th>Java version</th><th>Key JIT / performance change</th><th>What you gain</th></tr>
+    <tr><td><strong>17</strong> LTS</td><td>Biased locking removed; sealed classes; Vector API (incubating)</td><td>Simpler lock path; better devirt; explicit SIMD</td></tr>
+    <tr><td><strong>21</strong> LTS</td><td>Virtual thread JIT continuations; Generational ZGC</td><td>Same JIT quality for VT code; shorter GC pauses</td></tr>
+    <tr><td><strong>24</strong></td><td>JEP 483 — AOT class loading &amp; linking</td><td>Skip class-load cost on restart</td></tr>
+    <tr><td><strong>25</strong> LTS</td><td>JEP 514/515 — AOT method profiling</td><td>C2-quality code from first request; 50-63% faster startup</td></tr>
+    <tr><td><strong>26</strong></td><td>JEP 516 — AOT object cache; vectorization cost-model fix</td><td>Up to 4× loop speedups; 5-15% faster compilation</td></tr>
+    <tr><td><strong>27</strong></td><td>JVMCI removed (JEP 534/523); Compact object headers on</td><td>~20% smaller heap; fewer GC pauses; G1 everywhere</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>The big picture.</strong> Java 17–21 improved the <em>quality</em> of JIT-generated code
+    (better devirtualization, fewer lock pauses). Java 24–26 changed the <em>model</em>: with
+    Project Leyden's AOT cache you no longer wait for the JVM to warm up — profiles from yesterday's
+    run accelerate today's compilation from the very first request.
+  </div>
 
   <!-- ============================================================ -->
   <h2 id="cheat">Cheat sheet</h2>
