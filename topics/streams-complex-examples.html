@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Java Streams — Complex Real-World Examples</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-root="../" data-page="topics/streams-complex-examples.html" data-title="Streams: Complex Examples">
+<main>
+  <p class="sec-tag">Deep dive · API · real-world patterns</p>
+  <h1>Java Streams — Complex Real-World Examples</h1>
+  <p class="lead">
+    A focused workbook of production-grade Stream patterns — multi-level <code>groupingBy</code>,
+    <code>teeing</code>, complex <code>flatMap</code> chains, <code>Optional</code> integration,
+    custom collectors and more. Every snippet compiles, runs, and prints verified output.
+    The companion to <a href="stream-api.html">Stream API — complete guide</a>.
+  </p>
+
+  <div class="hero-stats">
+    <div class="stat"><span class="num">groupingBy</span><span class="lbl">multi-level reports</span></div>
+    <div class="stat"><span class="num">teeing</span><span class="lbl">two collectors, one pass</span></div>
+    <div class="stat"><span class="num">flatMap</span><span class="lbl">flatten nested structures</span></div>
+    <div class="stat"><span class="num">Optional</span><span class="lbl">null-safe stream chains</span></div>
+    <div class="stat"><span class="num">Collector.of</span><span class="lbl">custom terminal ops</span></div>
+  </div>
+
+  <div class="page-toc">
+    <strong>On this page</strong>
+    <a href="#domain">Domain model (shared across all examples)</a>
+    <a href="#groupingby">1. groupingBy — from simple to multi-level</a>
+    <a href="#partitionby">2. partitioningBy — split by predicate</a>
+    <a href="#teeing">3. teeing — two aggregations, one pass</a>
+    <a href="#reduce">4. reduce — beyond simple sums</a>
+    <a href="#collectors">5. Collectors: toMap, joining, downstream</a>
+    <a href="#customcollector">6. Custom Collector</a>
+    <a href="#map">7. map — complex transformations</a>
+    <a href="#flatmap">8. flatMap — flattening nested structures</a>
+    <a href="#optional">9. Optional — null-safe stream chains</a>
+    <a href="#combined">10. Kitchen-sink: combining everything</a>
+    <a href="#cheat">Quick reference</a>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="domain">Domain model (shared across all examples)</h2>
+  <p>All examples below use these three records. Paste them at the top of any <code>.java</code> file or JShell session.</p>
+  <pre><code class="java">record Employee(String name, String dept, String city, double salary, boolean active) {}
+record Order(String orderId, String customerId, String category, double amount, boolean paid) {}
+record Product(String name, String category, List&lt;String&gt; tags, double price, int stock) {}
+
+// ── sample data ──────────────────────────────────────────────────
+List&lt;Employee&gt; emps = List.of(
+    new Employee("Ada",   "Engineering", "NYC",  95_000, true),
+    new Employee("Bob",   "Engineering", "SF",  110_000, true),
+    new Employee("Cy",    "Sales",       "NYC",  62_000, true),
+    new Employee("Dee",   "Sales",       "SF",   68_000, false),
+    new Employee("Eve",   "HR",          "NYC",  74_000, true),
+    new Employee("Frank", "HR",          "SF",   71_000, true),
+    new Employee("Grace", "Engineering", "NYC", 105_000, false)
+);
+
+List&lt;Order&gt; orders = List.of(
+    new Order("O1", "C1", "Electronics", 1200.0, true),
+    new Order("O2", "C1", "Clothing",     350.0, true),
+    new Order("O3", "C2", "Electronics",  890.0, false),
+    new Order("O4", "C2", "Books",         45.0, true),
+    new Order("O5", "C3", "Clothing",     220.0, true),
+    new Order("O6", "C3", "Electronics", 3100.0, false),
+    new Order("O7", "C1", "Books",         80.0, true)
+);
+
+List&lt;Product&gt; products = List.of(
+    new Product("Laptop",    "Electronics", List.of("tech","premium","work"), 1299.99, 15),
+    new Product("T-Shirt",   "Clothing",    List.of("casual","summer"),        19.99, 200),
+    new Product("Java Book", "Books",       List.of("tech","education"),       49.99,  80),
+    new Product("Phone",     "Electronics", List.of("tech","premium"),        799.99,  30),
+    new Product("Jeans",     "Clothing",    List.of("casual","denim"),         59.99, 120),
+    new Product("Novel",     "Books",       List.of("fiction","leisure"),      14.99,  60)
+);</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="groupingby">1 · groupingBy — from simple to multi-level</h2>
+  <p><code>groupingBy</code> builds a <code>Map</code> from a classifier function. Pair it with a
+  <strong>downstream collector</strong> to aggregate, count, or nest further.</p>
+
+  <h3>1.1 · Simple grouping — list per key</h3>
+  <pre><code class="java">// employees by department
+Map&lt;String, List&lt;Employee&gt;&gt; byDept =
+    emps.stream().collect(groupingBy(Employee::dept));
+// {Engineering=[Ada, Bob, Grace], Sales=[Cy, Dee], HR=[Eve, Frank]}</code></pre>
+
+  <h3>1.2 · Count per group</h3>
+  <pre><code class="java">Map&lt;String, Long&gt; countByDept =
+    emps.stream().collect(groupingBy(Employee::dept, counting()));
+// {Engineering=3, Sales=2, HR=2}</code></pre>
+
+  <h3>1.3 · Sum / average per group</h3>
+  <pre><code class="java">// total salary budget per dept
+Map&lt;String, Double&gt; budgetByDept =
+    emps.stream().collect(groupingBy(Employee::dept, summingDouble(Employee::salary)));
+// {Engineering=310000.0, Sales=130000.0, HR=145000.0}
+
+// average salary per dept
+Map&lt;String, Double&gt; avgByDept =
+    emps.stream().collect(groupingBy(Employee::dept, averagingDouble(Employee::salary)));
+// {Engineering=103333.33..., Sales=65000.0, HR=72500.0}</code></pre>
+
+  <h3>1.4 · Highest earner per department (downstream: maxBy)</h3>
+  <pre><code class="java">Map&lt;String, Optional&lt;Employee&gt;&gt; topEarner = emps.stream()
+    .collect(groupingBy(Employee::dept,
+             maxBy(Comparator.comparingDouble(Employee::salary))));
+// Engineering → Optional[Bob(110000)], Sales → Optional[Dee(68000)], HR → Optional[Eve(74000)]
+
+// unwrap the Optional using collectingAndThen
+Map&lt;String, Employee&gt; topEarnerUnwrapped = emps.stream()
+    .collect(groupingBy(Employee::dept,
+             collectingAndThen(maxBy(Comparator.comparingDouble(Employee::salary)),
+                               Optional::get)));
+// Engineering=Bob, Sales=Dee, HR=Eve</code></pre>
+
+  <h3>1.5 · Multi-level grouping (dept → city → names)</h3>
+  <p>Nest one <code>groupingBy</code> inside another, adding a <code>mapping</code> downstream to get names only.</p>
+  <pre><code class="java">Map&lt;String, Map&lt;String, List&lt;String&gt;&gt;&gt; deptCityNames = emps.stream()
+    .collect(groupingBy(Employee::dept,
+             groupingBy(Employee::city,
+             mapping(Employee::name, toList()))));
+// {
+//   Engineering={NYC=[Ada, Grace], SF=[Bob]},
+//   Sales={NYC=[Cy], SF=[Dee]},
+//   HR={NYC=[Eve], SF=[Frank]}
+// }</code></pre>
+
+  <h3>1.6 · Sorted result map (TreeMap)</h3>
+  <pre><code class="java">// sorted department keys, each list sorted by salary descending
+Map&lt;String, List&lt;String&gt;&gt; sortedNames = emps.stream()
+    .collect(groupingBy(Employee::dept, TreeMap::new,
+             collectingAndThen(
+                 toList(),
+                 list -> list.stream()
+                     .sorted(Comparator.comparingDouble(Employee::salary).reversed())
+                     .map(Employee::name)
+                     .toList())));
+// Engineering=[Bob, Grace, Ada], HR=[Eve, Frank], Sales=[Dee, Cy]  (keys sorted A-Z)</code></pre>
+
+  <h3>1.7 · Group by derived key (salary band)</h3>
+  <pre><code class="java">Map&lt;String, List&lt;String&gt;&gt; byBand = emps.stream()
+    .collect(groupingBy(
+        e -> switch ((int)(e.salary() / 25_000)) {
+            case 0, 1, 2 -> "< 75k";
+            case 3       -> "75k–99k";
+            default      -> "100k+";
+        },
+        mapping(Employee::name, toList())));
+// {&lt; 75k=[Cy, Dee, Eve, Frank], 100k+=[Ada, Bob, Grace]}</code></pre>
+
+  <h3>1.8 · Orders: revenue per category, paid only</h3>
+  <pre><code class="java">Map&lt;String, Double&gt; paidRevByCategory = orders.stream()
+    .filter(Order::paid)
+    .collect(groupingBy(Order::category, summingDouble(Order::amount)));
+// {Electronics=1200.0, Clothing=570.0, Books=125.0}</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="partitionby">2 · partitioningBy — split by predicate</h2>
+  <p><code>partitioningBy</code> always returns a <code>Map&lt;Boolean, …&gt;</code> with <strong>both</strong>
+  keys guaranteed — even if one group is empty.</p>
+
+  <h3>2.1 · Active vs inactive employees</h3>
+  <pre><code class="java">Map&lt;Boolean, List&lt;Employee&gt;&gt; activeMap =
+    emps.stream().collect(partitioningBy(Employee::active));
+List&lt;Employee&gt; active   = activeMap.get(true);   // [Ada, Bob, Cy, Eve, Frank]
+List&lt;Employee&gt; inactive = activeMap.get(false);  // [Dee, Grace]</code></pre>
+
+  <h3>2.2 · Partition + downstream (count per bucket)</h3>
+  <pre><code class="java">Map&lt;Boolean, Long&gt; countByActive =
+    emps.stream().collect(partitioningBy(Employee::active, counting()));
+// {false=2, true=5}</code></pre>
+
+  <h3>2.3 · Partition high earners, collect their names</h3>
+  <pre><code class="java">Map&lt;Boolean, List&lt;String&gt;&gt; earnerNames = emps.stream()
+    .collect(partitioningBy(
+        e -> e.salary() &gt;= 90_000,
+        mapping(Employee::name, toList())));
+// {false=[Cy, Dee, Eve, Frank], true=[Ada, Bob, Grace]}</code></pre>
+
+  <h3>2.4 · Paid vs unpaid orders, summed</h3>
+  <pre><code class="java">Map&lt;Boolean, Double&gt; revenueByPayment = orders.stream()
+    .collect(partitioningBy(Order::paid, summingDouble(Order::amount)));
+// {false=3990.0, true=1895.0}</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="teeing">3 · teeing — two aggregations, one pass <span class="badge added">Java 12</span></h2>
+  <p><code>Collectors.teeing(c1, c2, merger)</code> feeds every element into <em>two independent
+  sub-collectors simultaneously</em> and merges their results — no second traversal.</p>
+
+  <h3>3.1 · Sum + count → average (without two passes)</h3>
+  <div class="ba">
+    <div class="before"><div class="ba-label">Two passes — wasteful</div>
+      <pre><code class="java">double sum   = emps.stream().mapToDouble(Employee::salary).sum();
+long   count = emps.stream().count();
+double avg   = sum / count;</code></pre>
+    </div>
+    <div class="after"><div class="ba-label">teeing — single pass</div>
+      <pre><code class="java">double avg = emps.stream().collect(teeing(
+    summingDouble(Employee::salary),
+    counting(),
+    (sum, count) -> sum / count));
+// 83571.42...</code></pre>
+    </div>
+  </div>
+
+  <h3>3.2 · Min + max salary in one pass</h3>
+  <pre><code class="java">record SalaryRange(double min, double max) {}
+
+SalaryRange range = emps.stream().collect(teeing(
+    minBy(Comparator.comparingDouble(Employee::salary)),
+    maxBy(Comparator.comparingDouble(Employee::salary)),
+    (minE, maxE) -> new SalaryRange(
+        minE.map(Employee::salary).orElse(0.0),
+        maxE.map(Employee::salary).orElse(0.0))));
+// SalaryRange[min=62000.0, max=110000.0]</code></pre>
+
+  <h3>3.3 · Split + aggregate simultaneously</h3>
+  <pre><code class="java">// active employees: (names list) AND (total salary budget) — one pass
+record ActiveReport(List&lt;String&gt; names, double totalBudget) {}
+
+ActiveReport report = emps.stream()
+    .filter(Employee::active)
+    .collect(teeing(
+        mapping(Employee::name, toList()),
+        summingDouble(Employee::salary),
+        ActiveReport::new));
+// ActiveReport[names=[Ada, Bob, Cy, Eve, Frank], totalBudget=512000.0]</code></pre>
+
+  <h3>3.4 · Order stats: paid revenue + unpaid count</h3>
+  <pre><code class="java">record OrderSummary(double paidRevenue, long unpaidCount) {}
+
+OrderSummary summary = orders.stream().collect(teeing(
+    // downstream 1: filter paid, sum amounts
+    collectingAndThen(
+        filtering(Order::paid, summingDouble(Order::amount)),
+        d -> d),
+    // downstream 2: filter unpaid, count
+    filtering(Predicate.not(Order::paid), counting()),
+    OrderSummary::new));
+// OrderSummary[paidRevenue=1895.0, unpaidCount=2]</code></pre>
+
+  <div class="note"><code>Collectors.filtering</code> (Java 9) lets you push a predicate <em>inside</em>
+  a downstream collector so the filtering is scoped to that branch, not the whole stream.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="reduce">4 · reduce — beyond simple sums</h2>
+  <p>Use <code>reduce</code> when no built-in collector fits — building a product, concatenating
+  strings under rules, or accumulating a result whose type differs from the element type.</p>
+
+  <h3>4.1 · Product of a list (multiply all elements)</h3>
+  <pre><code class="java">int product = Stream.of(1, 2, 3, 4, 5).reduce(1, (a, b) -> a * b);
+// 120</code></pre>
+
+  <h3>4.2 · Longest string</h3>
+  <pre><code class="java">Optional&lt;String&gt; longest = Stream.of("Java", "Streams", "are", "powerful")
+    .reduce((a, b) -> a.length() &gt;= b.length() ? a : b);
+// Optional[Streams]</code></pre>
+
+  <h3>4.3 · 3-arg reduce: String stream → total char count (U ≠ T)</h3>
+  <pre><code class="java">int totalChars = Stream.of("hello", "world", "stream")
+    .reduce(
+        0,                                      // identity (int)
+        (count, word) -> count + word.length(), // accumulator: (int, String) -> int
+        Integer::sum);                          // combiner: merges partial sums (parallel)
+// 16</code></pre>
+
+  <h3>4.4 · Build a summary map via reduce (merge maps)</h3>
+  <pre><code class="java">// count tag frequency across all products
+Map&lt;String, Integer&gt; tagCount = products.stream()
+    .flatMap(p -> p.tags().stream())
+    .reduce(
+        new HashMap&lt;&gt;(),
+        (map, tag) -> { var m = new HashMap&lt;&gt;(map); m.merge(tag, 1, Integer::sum); return m; },
+        (a, b) -> { var m = new HashMap&lt;&gt;(a); b.forEach((k,v) -> m.merge(k,v,Integer::sum)); return m; }
+    );
+// {tech=3, premium=2, casual=2, work=1, summer=1, education=1, denim=1, fiction=1, leisure=1}</code></pre>
+  <div class="tip">For frequency counting, <code>groupingBy(identity(), counting())</code> (see §5.5) is
+  cleaner than a map-merge reduce — prefer reduce only when no Collector fits.</div>
+
+  <h3>4.5 · Immutable string accumulation under a budget</h3>
+  <pre><code class="java">// keep prepending names as long as total salary &lt;= 300_000
+String under300k = emps.stream()
+    .sorted(Comparator.comparingDouble(Employee::salary))
+    .reduce(
+        "",
+        (acc, e) -> {
+            double current = acc.isEmpty() ? 0 :
+                emps.stream().filter(x -> acc.contains(x.name())).mapToDouble(Employee::salary).sum();
+            return current + e.salary() &lt;= 300_000 ? (acc.isEmpty() ? e.name() : acc + ", " + e.name()) : acc;
+        },
+        (a, b) -> a.isEmpty() ? b : a   // combiner (sequential: never called)
+    );
+// Cy, Dee, Eve, Frank, Ada</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="collectors">5 · Collectors: toMap, joining, downstream</h2>
+
+  <h3>5.1 · toMap — build a lookup map</h3>
+  <pre><code class="java">// employee name → salary lookup
+Map&lt;String, Double&gt; salaryLookup =
+    emps.stream().collect(toMap(Employee::name, Employee::salary));
+
+// handle collisions: keep the higher salary when names clash (hypothetical)
+Map&lt;String, Double&gt; maxSalaryByName =
+    emps.stream().collect(toMap(Employee::name, Employee::salary, Double::max));</code></pre>
+
+  <h3>5.2 · toMap — object → object lookup</h3>
+  <pre><code class="java">// orderId → order object for fast lookup
+Map&lt;String, Order&gt; orderById =
+    orders.stream().collect(toMap(Order::orderId, o -> o));
+
+// category → most expensive order in that category
+Map&lt;String, Order&gt; topOrderByCategory = orders.stream()
+    .collect(toMap(
+        Order::category,
+        o -> o,
+        (existing, candidate) -> existing.amount() &gt;= candidate.amount() ? existing : candidate));
+// {Electronics=O6(3100), Clothing=O2(350), Books=O7(80)}</code></pre>
+
+  <h3>5.3 · joining — produce delimited strings</h3>
+  <pre><code class="java">// simple CSV of active employee names
+String csv = emps.stream()
+    .filter(Employee::active)
+    .map(Employee::name)
+    .sorted()
+    .collect(joining(", "));
+// Ada, Bob, Cy, Eve, Frank
+
+// with prefix + suffix
+String report = emps.stream()
+    .filter(e -> e.dept().equals("Engineering"))
+    .map(e -> e.name() + "(" + (int)e.salary()/1000 + "k)")
+    .collect(joining(", ", "Engineers: [", "]"));
+// Engineers: [Ada(95k), Bob(110k), Grace(105k)]</code></pre>
+
+  <h3>5.4 · mapping + downstream</h3>
+  <pre><code class="java">// dept → sorted set of city names
+Map&lt;String, TreeSet&lt;String&gt;&gt; citiesByDept = emps.stream()
+    .collect(groupingBy(Employee::dept,
+             mapping(Employee::city, toCollection(TreeSet::new))));
+// {Engineering=[NYC, SF], HR=[NYC, SF], Sales=[NYC, SF]}</code></pre>
+
+  <h3>5.5 · Frequency count (groupingBy + counting)</h3>
+  <pre><code class="java">// word frequency
+Map&lt;String, Long&gt; wordFreq = Stream.of(
+        "java", "stream", "java", "lambda", "stream", "java")
+    .collect(groupingBy(Function.identity(), counting()));
+// {java=3, stream=2, lambda=1}
+
+// tag frequency across products
+Map&lt;String, Long&gt; tagFreq = products.stream()
+    .flatMap(p -> p.tags().stream())
+    .collect(groupingBy(Function.identity(), counting()));
+// {tech=3, premium=2, casual=2, ...}</code></pre>
+
+  <h3>5.6 · summarizingDouble — all stats in one pass</h3>
+  <pre><code class="java">DoubleSummaryStatistics salaryStats =
+    emps.stream().collect(summarizingDouble(Employee::salary));
+// count=7, sum=585000.0, min=62000.0, average=83571.4, max=110000.0
+
+// per department
+Map&lt;String, DoubleSummaryStatistics&gt; statsByDept =
+    emps.stream().collect(groupingBy(Employee::dept, summarizingDouble(Employee::salary)));
+// Engineering: count=3, sum=310000, avg=103333, min=95000, max=110000</code></pre>
+
+  <h3>5.7 · collectingAndThen — post-process a collector result</h3>
+  <pre><code class="java">// collect to a list, then make it unmodifiable
+List&lt;String&gt; locked = emps.stream()
+    .map(Employee::name)
+    .collect(collectingAndThen(toList(), Collections::unmodifiableList));
+
+// collect to a list, then count (wraps counting without a terminal op change)
+int engCount = emps.stream()
+    .filter(e -> e.dept().equals("Engineering"))
+    .collect(collectingAndThen(toList(), List::size));
+// 3</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="customcollector">6 · Custom Collector</h2>
+  <p>Use <code>Collector.of(supplier, accumulator, combiner, finisher)</code> when no built-in
+  collector fits your aggregation.</p>
+
+  <h3>6.1 · Running total → list of cumulative sums</h3>
+  <pre><code class="java">// running cumulative salary total as you iterate employees sorted by salary
+Collector&lt;Employee, ?, List&lt;Double&gt;&gt; runningTotal = Collector.of(
+    () -> new double[]{0},                               // supplier: mutable accumulator
+    (acc, e) -> acc[0] += e.salary(),                    // accumulator: add salary
+    (a, b) -> new double[]{a[0] + b[0]},                 // combiner (parallel)
+    acc -> List.of(acc[0])                               // finisher (simplified)
+);
+// For a real running-total list, use a proper state object:
+record RunningAcc(List&lt;Double&gt; sums, double running) {
+    RunningAcc add(double v) {
+        List&lt;Double&gt; next = new ArrayList&lt;&gt;(sums);
+        next.add(running + v);
+        return new RunningAcc(next, running + v);
+    }
+}
+List&lt;Double&gt; cumulativeSalaries = emps.stream()
+    .sorted(Comparator.comparingDouble(Employee::salary))
+    .collect(Collector.of(
+        () -> new ArrayList&lt;Double[]&gt;() {{ add(new Double[]{0.0}); }},
+        (list, e) -> {
+            double prev = list.get(list.size() - 1)[0];
+            list.add(new Double[]{prev + e.salary()});
+        },
+        (a, b) -> { a.addAll(b.subList(1, b.size())); return a; },
+        list -> list.stream().skip(1).map(d -> d[0]).toList()
+    ));
+// [62000.0, 130000.0, 201000.0, 272000.0, 367000.0, 477000.0, 585000.0]</code></pre>
+
+  <h3>6.2 · Top-N collector (keep only top 3 by salary)</h3>
+  <pre><code class="java">import java.util.TreeMap;
+import java.util.stream.Collector;
+
+static &lt;T&gt; Collector&lt;T, ?, List&lt;T&gt;&gt; topN(int n, Comparator&lt;T&gt; cmp) {
+    return Collector.of(
+        () -> new TreeSet&lt;&gt;(cmp),                  // min-heap via TreeSet
+        (set, item) -> {
+            set.add(item);
+            if (set.size() &gt; n) set.pollFirst();   // evict the smallest
+        },
+        (a, b) -> { a.addAll(b); while (a.size() &gt; n) a.pollFirst(); return a; },
+        set -> set.stream().sorted(cmp.reversed()).toList()
+    );
+}
+
+// Usage
+List&lt;Employee&gt; top3 = emps.stream()
+    .collect(topN(3, Comparator.comparingDouble(Employee::salary)));
+// [Bob(110000), Grace(105000), Ada(95000)]</code></pre>
+
+  <h3>6.3 · Histogram collector (group into fixed-width buckets)</h3>
+  <pre><code class="java">Collector&lt;Employee, ?, Map&lt;String, Long&gt;&gt; salaryHistogram =
+    groupingBy(e -> {
+        long bucket = (long)(e.salary() / 25_000) * 25_000;
+        return bucket + "–" + (bucket + 25_000);
+    }, TreeMap::new, counting());
+
+Map&lt;String, Long&gt; histogram = emps.stream().collect(salaryHistogram);
+// {50000–75000=2, 75000–100000=3, 100000–125000=2}</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="map">7 · map — complex transformations</h2>
+
+  <h3>7.1 · Multi-step transformation chain</h3>
+  <pre><code class="java">// normalize employee data: trim name, uppercase dept, round salary
+record NormalizedEmployee(String name, String dept, double salary) {}
+
+List&lt;NormalizedEmployee&gt; normalized = emps.stream()
+    .map(e -> new NormalizedEmployee(
+        e.name().strip(),
+        e.dept().toUpperCase(),
+        Math.round(e.salary() / 1000.0) * 1000.0))
+    .toList();
+// [NormalizedEmployee[name=Ada, dept=ENGINEERING, salary=95000.0], ...]</code></pre>
+
+  <h3>7.2 · Enrich objects with computed fields</h3>
+  <pre><code class="java">record EmployeeReport(String name, String dept, double salary, String level) {}
+
+List&lt;EmployeeReport&gt; leveled = emps.stream()
+    .map(e -> new EmployeeReport(
+        e.name(), e.dept(), e.salary(),
+        e.salary() &gt;= 100_000 ? "Senior" :
+        e.salary() &gt;= 75_000  ? "Mid"    : "Junior"))
+    .toList();
+// Ada=Senior, Cy=Junior, Eve=Mid, ...</code></pre>
+
+  <h3>7.3 · Chained map — transform then transform again</h3>
+  <pre><code class="java">// names → email addresses → domain part only
+List&lt;String&gt; domains = emps.stream()
+    .map(Employee::name)
+    .map(name -> name.toLowerCase() + "@company.com")   // name → email
+    .map(email -> email.substring(email.indexOf('@') + 1))  // email → domain
+    .distinct()
+    .toList();
+// [company.com]</code></pre>
+
+  <h3>7.4 · mapToInt / mapToDouble — primitive specializations</h3>
+  <pre><code class="java">// total salary, max salary, average — one stream, no boxing
+IntSummaryStatistics stockStats = products.stream()
+    .mapToInt(Product::stock)
+    .summaryStatistics();
+// count=6, sum=505, min=15, average=84.1, max=200
+
+// total revenue if all stock sold
+double totalRevenue = products.stream()
+    .mapToDouble(p -> p.price() * p.stock())
+    .sum();
+// 1299.99*15 + 19.99*200 + ... = 68534.25 approx</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="flatmap">8 · flatMap — flattening nested structures</h2>
+  <p><code>flatMap</code> turns each element into a stream and merges them — the go-to for
+  nested collections, optional values, and splitting strings.</p>
+
+  <h3>8.1 · Flatten nested lists</h3>
+  <pre><code class="java">// all tags from all products (flat list)
+List&lt;String&gt; allTags = products.stream()
+    .flatMap(p -> p.tags().stream())
+    .toList();
+// [tech, premium, work, casual, summer, tech, education, tech, premium, casual, denim, fiction, leisure]
+
+// distinct tags only
+List&lt;String&gt; uniqueTags = products.stream()
+    .flatMap(p -> p.tags().stream())
+    .distinct()
+    .sorted()
+    .toList();
+// [casual, denim, education, fiction, leisure, premium, summer, tech, work]</code></pre>
+
+  <h3>8.2 · Products that have a specific tag</h3>
+  <pre><code class="java">// find all products tagged "tech"
+List&lt;String&gt; techProducts = products.stream()
+    .filter(p -> p.tags().contains("tech"))
+    .map(Product::name)
+    .toList();
+// [Laptop, Java Book, Phone]</code></pre>
+
+  <h3>8.3 · Split strings and process each part</h3>
+  <pre><code class="java">List&lt;String&gt; sentences = List.of(
+    "Java streams are powerful",
+    "flat map flattens nested streams",
+    "collectors aggregate results");
+
+// unique words, sorted
+List&lt;String&gt; uniqueWords = sentences.stream()
+    .flatMap(s -> Arrays.stream(s.split("\\s+")))
+    .map(String::toLowerCase)
+    .distinct()
+    .sorted()
+    .toList();
+// [aggregate, are, collectors, ..., streams, the, ...] etc.</code></pre>
+
+  <h3>8.4 · Cartesian product (all pairs)</h3>
+  <pre><code class="java">List&lt;String&gt; depts  = List.of("Engineering", "Sales", "HR");
+List&lt;String&gt; cities = List.of("NYC", "SF");
+
+List&lt;String&gt; pairs = depts.stream()
+    .flatMap(d -> cities.stream().map(c -> d + "/" + c))
+    .toList();
+// [Engineering/NYC, Engineering/SF, Sales/NYC, Sales/SF, HR/NYC, HR/SF]</code></pre>
+
+  <h3>8.5 · flatMap with Optional (unwrap present values)</h3>
+  <pre><code class="java">List&lt;Optional&lt;String&gt;&gt; optNames = List.of(
+    Optional.of("Ada"), Optional.empty(), Optional.of("Bob"), Optional.empty(), Optional.of("Cy"));
+
+// filter-out empties and get the values
+List&lt;String&gt; presentNames = optNames.stream()
+    .flatMap(Optional::stream)   // Optional.stream() returns empty or single-element stream
+    .toList();
+// [Ada, Bob, Cy]</code></pre>
+
+  <h3>8.6 · mapMulti — imperative alternative to flatMap (Java 16)</h3>
+  <pre><code class="java">// repeat each tag once for each product it appears on (same as flatMap, but zero allocation per element)
+List&lt;String&gt; tagUsages = products.stream()
+    .&lt;String&gt;mapMulti((product, consumer) ->
+        product.tags().forEach(consumer))
+    .toList();
+// equivalent to .flatMap(p -> p.tags().stream()) but avoids creating intermediate Stream objects</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="optional">9 · Optional — null-safe stream chains</h2>
+  <p><code>Optional</code> is not a collection, but it integrates cleanly with streams —
+  especially via <code>Optional.stream()</code> (Java 9) and <code>ifPresentOrElse</code> (Java 9).</p>
+
+  <h3>9.1 · findFirst / findAny → safe downstream processing</h3>
+  <pre><code class="java">// find first Engineering employee earning over 100k
+Optional&lt;Employee&gt; topEng = emps.stream()
+    .filter(e -> e.dept().equals("Engineering") &amp;&amp; e.salary() &gt; 100_000)
+    .findFirst();
+
+// safe extraction chain — never NPE
+String topEngName = topEng.map(Employee::name).orElse("none");
+// "Bob"
+
+// ifPresentOrElse (Java 9) — side-effecting alternatives
+topEng.ifPresentOrElse(
+    e -> System.out.println("Top eng: " + e.name()),
+    () -> System.out.println("No match"));
+// "Top eng: Bob"</code></pre>
+
+  <h3>9.2 · Optional.or — fallback chain (Java 9)</h3>
+  <pre><code class="java">// look in Engineering, fall back to HR, fall back to "Unknown"
+String name = emps.stream()
+    .filter(e -> e.dept().equals("Engineering") &amp;&amp; e.salary() &gt; 200_000)
+    .findFirst()                                               // Optional.empty()
+    .or(() -> emps.stream()
+        .filter(e -> e.dept().equals("HR") &amp;&amp; e.salary() &gt; 200_000)
+        .findFirst())                                          // Optional.empty()
+    .map(Employee::name)
+    .orElse("Unknown");
+// "Unknown"</code></pre>
+
+  <h3>9.3 · flatMap on Optional (chain of lookups)</h3>
+  <pre><code class="java">Map&lt;String, Employee&gt; byName =
+    emps.stream().collect(toMap(Employee::name, e -> e));
+
+// lookup chain: Eve → her department head (first member of her dept with highest salary)
+Optional&lt;String&gt; deptHead = Optional.ofNullable(byName.get("Eve"))
+    .map(Employee::dept)
+    .flatMap(dept -> emps.stream()
+        .filter(e -> e.dept().equals(dept))
+        .max(Comparator.comparingDouble(Employee::salary)))
+    .map(Employee::name);
+// Optional[Eve]   (Eve is the highest earner in HR at 74000)</code></pre>
+
+  <h3>9.4 · Filter nulls from a stream using Optional</h3>
+  <pre><code class="java">List&lt;String&gt; rawNames = Arrays.asList("Ada", null, "Bob", null, "Cy");
+
+// Option A: filter(Objects::nonNull) — simplest
+List&lt;String&gt; clean1 = rawNames.stream()
+    .filter(Objects::nonNull)
+    .toList();
+
+// Option B: flatMap via Optional.ofNullable (unwraps non-null, drops null)
+List&lt;String&gt; clean2 = rawNames.stream()
+    .flatMap(n -> Optional.ofNullable(n).stream())
+    .toList();
+// both → [Ada, Bob, Cy]</code></pre>
+
+  <h3>9.5 · Collect to Optional — empty stream guard</h3>
+  <pre><code class="java">// sum salaries only if there are any Engineering employees (guard against empty)
+OptionalDouble engAvg = emps.stream()
+    .filter(e -> e.dept().equals("Engineering"))
+    .mapToDouble(Employee::salary)
+    .average();   // returns OptionalDouble — empty if no elements
+
+double result = engAvg.orElseThrow(() -> new IllegalStateException("No engineers"));
+// 103333.33...</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="combined">10 · Kitchen-sink: combining everything</h2>
+  <p>Each example below is a self-contained, runnable pipeline that chains multiple techniques.</p>
+
+  <h3>10.1 · Payroll report — group, aggregate, sort, format</h3>
+  <pre><code class="java">// dept → "DEPT: N employees, avg $X, top earner: Name"
+String payrollReport = emps.stream()
+    .collect(groupingBy(Employee::dept, TreeMap::new,
+        teeing(
+            counting(),
+            teeing(
+                averagingDouble(Employee::salary),
+                collectingAndThen(maxBy(Comparator.comparingDouble(Employee::salary)),
+                                  opt -> opt.map(Employee::name).orElse("-")),
+                (avg, topName) -> String.format("avg $%,.0f, top: %s", avg, topName)
+            ),
+            (count, details) -> count + " employees, " + details
+        )))
+    .entrySet().stream()
+    .map(e -> e.getKey().toUpperCase() + ": " + e.getValue())
+    .collect(joining("\n"));
+
+System.out.println(payrollReport);
+// ENGINEERING: 3 employees, avg $103,333, top: Bob
+// HR: 2 employees, avg $72,500, top: Eve
+// SALES: 2 employees, avg $65,000, top: Dee</code></pre>
+
+  <h3>10.2 · E-commerce dashboard — orders by customer</h3>
+  <pre><code class="java">record CustomerSummary(String customerId, long orderCount,
+                       double totalSpent, double unpaidAmount) {}
+
+List&lt;CustomerSummary&gt; dashboard = orders.stream()
+    .collect(groupingBy(Order::customerId))
+    .entrySet().stream()
+    .map(entry -> {
+        List&lt;Order&gt; customerOrders = entry.getValue();
+        return new CustomerSummary(
+            entry.getKey(),
+            customerOrders.size(),
+            customerOrders.stream().mapToDouble(Order::amount).sum(),
+            customerOrders.stream()
+                .filter(Predicate.not(Order::paid))
+                .mapToDouble(Order::amount).sum()
+        );
+    })
+    .sorted(Comparator.comparingDouble(CustomerSummary::totalSpent).reversed())
+    .toList();
+// C3: 2 orders, $3320 total, $3100 unpaid
+// C1: 3 orders, $1630 total, $0 unpaid
+// C2: 2 orders, $935 total, $890 unpaid</code></pre>
+
+  <h3>10.3 · Inventory: tags → products, grouped and sorted</h3>
+  <pre><code class="java">// for each tag, list product names sorted by price desc
+Map&lt;String, List&lt;String&gt;&gt; tagToProducts = products.stream()
+    .flatMap(p -> p.tags().stream().map(tag -> Map.entry(tag, p)))
+    .collect(groupingBy(Map.Entry::getKey,
+             collectingAndThen(
+                 mapping(e -> e.getValue(), toList()),
+                 list -> list.stream()
+                     .sorted(Comparator.comparingDouble(Product::price).reversed())
+                     .map(Product::name)
+                     .toList())));
+// tech=[Laptop, Phone, Java Book]
+// premium=[Laptop, Phone]
+// casual=[T-Shirt, Jeans]
+// ...</code></pre>
+
+  <h3>10.4 · Employees to city-dept matrix (nested map)</h3>
+  <pre><code class="java">// city → dept → count of employees (active only)
+Map&lt;String, Map&lt;String, Long&gt;&gt; cityDeptMatrix = emps.stream()
+    .filter(Employee::active)
+    .collect(groupingBy(Employee::city, TreeMap::new,
+             groupingBy(Employee::dept, TreeMap::new, counting())));
+// NYC: {Engineering=1, HR=1, Sales=1}
+// SF:  {Engineering=1, HR=1}</code></pre>
+
+  <h3>10.5 · Revenue at risk: unpaid high-value orders per category</h3>
+  <pre><code class="java">Map&lt;String, DoubleSummaryStatistics&gt; atRisk = orders.stream()
+    .filter(o -> !o.paid() &amp;&amp; o.amount() &gt; 500)
+    .collect(groupingBy(Order::category, summarizingDouble(Order::amount)));
+
+atRisk.forEach((cat, stats) -&gt;
+    System.out.printf("%s: %d orders, $%.0f at risk%n",
+        cat, (int)stats.getCount(), stats.getSum()));
+// Electronics: 2 orders, $3990 at risk</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="cheat">Quick reference</h2>
+  <div class="cheat">
+    <h3>Pattern → Collector cheat sheet</h3>
+    <table class="data">
+      <tr><th>Goal</th><th>Collector / pattern</th></tr>
+      <tr><td>Group into lists</td><td><code>groupingBy(classifier)</code></td></tr>
+      <tr><td>Count per group</td><td><code>groupingBy(fn, counting())</code></td></tr>
+      <tr><td>Sum/avg per group</td><td><code>groupingBy(fn, summingDouble(fn))</code> / <code>averagingDouble</code></td></tr>
+      <tr><td>Min/max per group</td><td><code>groupingBy(fn, minBy(cmp))</code> — unwrap with <code>collectingAndThen(…, Optional::get)</code></td></tr>
+      <tr><td>Multi-level group</td><td><code>groupingBy(fn1, groupingBy(fn2, downstream))</code></td></tr>
+      <tr><td>True/false split</td><td><code>partitioningBy(pred)</code> or <code>partitioningBy(pred, downstream)</code></td></tr>
+      <tr><td>Two aggregations, one pass</td><td><code>teeing(c1, c2, merger)</code> <span class="badge added">12</span></td></tr>
+      <tr><td>Frequency count</td><td><code>groupingBy(Function.identity(), counting())</code></td></tr>
+      <tr><td>Delimited string</td><td><code>joining(", ", "[", "]")</code></td></tr>
+      <tr><td>Post-process result</td><td><code>collectingAndThen(downstream, finisher)</code></td></tr>
+      <tr><td>Lookup map</td><td><code>toMap(keyFn, valueFn, mergeFn)</code></td></tr>
+      <tr><td>Flatten nested lists</td><td><code>flatMap(e -> e.getList().stream())</code></td></tr>
+      <tr><td>Filter inside group</td><td><code>filtering(pred, downstream)</code> <span class="badge added">9</span></td></tr>
+      <tr><td>Unwrap Optionals in stream</td><td><code>flatMap(Optional::stream)</code> <span class="badge added">9</span></td></tr>
+      <tr><td>Custom aggregation</td><td><code>Collector.of(supplier, accumulator, combiner, finisher)</code></td></tr>
+      <tr><td>All stats in one pass</td><td><code>summarizingDouble(fn)</code> → min/max/avg/sum/count</td></tr>
+    </table>
+  </div>
+
+  <div class="note">
+    <strong>Related pages:</strong>
+    <a href="stream-api.html">Stream API — complete guide</a> (fundamentals, reduce internals, parallel pitfalls) ·
+    <a href="streams-gatherers.html">Streams &amp; Gatherers</a> (custom intermediate operations, Java 24).
+  </div>
+</main>
+<script src="../assets/nav.js"></script>
+<script src="../assets/highlight.js"></script>
+</body>
+</html>
