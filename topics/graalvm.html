@@ -544,29 +544,74 @@ mvn spring-boot:process-aot</code></pre>
     automatically, with less work from you.
   </p>
 
-  <h3>Layer 1 — GraalVM Reachability Metadata Repository (automatic)</h3>
+  <h3>Layer 1 — GraalVM Shared Reachability Metadata Repository</h3>
   <p>
-    Oracle maintains a community-contributed repo at
-    <code>github.com/oracle/graalvm-reachability-metadata</code> with pre-built
-    <code>reflect-config.json</code> and friends for hundreds of mainstream libraries:
-    Jackson, Hibernate, HikariCP, Caffeine, Netty, PostgreSQL/MySQL drivers, Mockito, and more.
-    The <code>native-maven-plugin</code> and <code>native-gradle-plugin</code> pull the matching
-    version's metadata automatically at build time — you get native support for most mainstream
-    libraries <strong>without writing a single config file</strong>.
+    This is the most powerful layer — it requires <strong>zero code changes</strong> from you.
   </p>
-  <pre><code class="xml">&lt;!-- The native-maven-plugin already wires this; no extra config needed --&gt;
+  <p>
+    Oracle hosts a community-driven repository at
+    <code>github.com/oracle/graalvm-reachability-metadata</code> that contains pre-built
+    <code>reflect-config.json</code>, <code>proxy-config.json</code>,
+    <code>resource-config.json</code>, and <code>serialization-config.json</code> for hundreds of
+    mainstream libraries that don't ship their own hints: PostgreSQL/MySQL JDBC drivers, Jackson,
+    Hibernate, Netty, HikariCP, Caffeine, Mockito, Lombok, Bouncy Castle, and many more.
+    Each library entry is versioned — the metadata for
+    <code>postgresql:42.6.0</code> is separate from <code>postgresql:42.7.0</code> so you always
+    get the right config for the exact version you're using.
+  </p>
+  <p>
+    <strong>How Spring Boot wires it automatically:</strong> when you run
+    <code>mvn -Pnative native:compile</code>, the <code>native-maven-plugin</code> (or
+    <code>native-gradle-plugin</code>) reads your dependency list, queries the metadata repository
+    for each dependency, downloads the matching config files, and injects them into the
+    <code>native-image</code> build — <em>before your code is compiled to native</em>.
+    You never see the downloaded files; they are merged silently in the build working directory.
+  </p>
+  <pre><code class="xml">&lt;!-- pom.xml — metadataRepository is ON by default in native-maven-plugin 0.9.19+ --&gt;
 &lt;plugin&gt;
   &lt;groupId&gt;org.graalvm.buildtools&lt;/groupId&gt;
   &lt;artifactId&gt;native-maven-plugin&lt;/artifactId&gt;
   &lt;version&gt;0.10.3&lt;/version&gt;
   &lt;extensions&gt;true&lt;/extensions&gt;
-  &lt;!-- metadataRepository is enabled by default in recent versions --&gt;
   &lt;configuration&gt;
     &lt;metadataRepository&gt;
-      &lt;enabled&gt;true&lt;/enabled&gt;
+      &lt;enabled&gt;true&lt;/enabled&gt;  &lt;!-- already the default --&gt;
     &lt;/metadataRepository&gt;
   &lt;/configuration&gt;
 &lt;/plugin&gt;</code></pre>
+  <pre><code class="groovy">// build.gradle — same, enabled by default
+graalvmNative {
+    metadataRepository {
+        enabled = true   // default; shown for clarity
+    }
+}</code></pre>
+
+  <h3>Checking coverage — which of your dependencies have metadata?</h3>
+  <pre><code class="bash"># Maven: list which dependencies were resolved from the metadata repository
+mvn -Pnative native:compile -Dnative.verbose=true 2&gt;&amp;1 \
+  | grep -i "metadata\|reachability"
+# Lines like:
+# [native] Found GraalVM reachability metadata for org.postgresql:postgresql:42.7.3
+
+# Gradle:
+./gradlew nativeCompile --info 2&gt;&amp;1 | grep -i "reachability"
+
+# To see the full list of covered libraries in the repository:
+# Browse: github.com/oracle/graalvm-reachability-metadata/tree/main/metadata
+# Or use the GitHub search: site:github.com/oracle/graalvm-reachability-metadata &lt;library-name&gt;</code></pre>
+
+  <h3>A library is NOT in the repository — what happens?</h3>
+  <p>
+    The build doesn't fail. <code>native-image</code> simply won't have config for that library,
+    so any reflection it does at runtime will throw a <code>MissingReflectionRegistrationError</code>
+    (or silently return <code>null</code> for older libraries). This is when you move to Layers
+    2–5 below.
+  </p>
+  <p>
+    You can also <strong>contribute missing metadata back</strong> to the community repo via a
+    pull request — the repository actively accepts contributions, and that benefits every
+    project that uses the same library.
+  </p>
 
   <h3>Layer 2 — Library ships a <code>RuntimeHintsRegistrar</code></h3>
   <p>
