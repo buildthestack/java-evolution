@@ -39,6 +39,10 @@
     <a href="#flatmap">8. flatMap — flattening nested structures</a>
     <a href="#optional">9. Optional — null-safe stream chains</a>
     <a href="#combined">10. Kitchen-sink: combining everything</a>
+    <a href="#intermediate">11. Intermediate ops — complete patterns</a>
+    <a href="#numeric">12. Numeric &amp; primitive streams</a>
+    <a href="#advanced-collectors">13. Advanced collector patterns</a>
+    <a href="#shortcircuit">14. Short-circuit &amp; matching terminals</a>
     <a href="#cheat">Quick reference</a>
   </div>
 
@@ -722,6 +726,496 @@ atRisk.forEach((cat, stats) -&gt;
 // Electronics: 2 orders, $3990 at risk</code></pre>
 
   <!-- ============================================================ -->
+  <h2 id="intermediate">11 · Intermediate operations — complete patterns</h2>
+  <p>Every intermediate op is <strong>lazy</strong> — it describes the pipeline but nothing runs until a
+  terminal op pulls elements through. These patterns cover the ones most often misused or underused.</p>
+
+  <h3>11.1 · filter — Predicate composition</h3>
+  <p><code>Predicate</code>'s <code>and</code>, <code>or</code>, <code>negate</code> let you build
+  reusable filter logic without repeating lambda bodies.</p>
+  <pre><code class="java">Predicate&lt;Employee&gt; isActive   = Employee::active;
+Predicate&lt;Employee&gt; isHighPaid = e -> e.salary() &gt;= 90_000;
+Predicate&lt;Employee&gt; isNYC      = e -> e.city().equals("NYC");
+
+// compose — active AND high-paid
+List&lt;String&gt; activeHighPaid = emps.stream()
+    .filter(isActive.and(isHighPaid))
+    .map(Employee::name).toList();
+// [Ada, Bob]
+
+// negate — NOT active
+List&lt;String&gt; inactive = emps.stream()
+    .filter(isActive.negate())   // same as Predicate.not(Employee::active)
+    .map(Employee::name).toList();
+// [Dee, Grace]
+
+// or — NYC OR high-paid
+List&lt;String&gt; nycOrHighPaid = emps.stream()
+    .filter(isNYC.or(isHighPaid))
+    .map(Employee::name).distinct().toList();
+// [Ada, Bob, Cy, Eve, Grace]</code></pre>
+
+  <h3>11.2 · distinct — de-duplicate by a field (not just equals)</h3>
+  <p><code>distinct()</code> uses <code>equals</code> — to deduplicate by a specific field, use a
+  stateful predicate via a <code>Set</code>.</p>
+  <pre><code class="java">// one employee per city (first encountered)
+Set&lt;String&gt; seen = ConcurrentHashMap.newKeySet();  // thread-safe for parallel()
+List&lt;Employee&gt; onePerCity = emps.stream()
+    .filter(e -> seen.add(e.city()))  // add returns false if already present
+    .toList();
+// [Ada(NYC), Bob(SF)]  — first employee encountered per city
+
+// cleaner: collect to a map, then values (keeps first per key)
+Map&lt;String, Employee&gt; firstPerCity = emps.stream()
+    .collect(toMap(Employee::city, e -> e, (existing, dup) -> existing));
+// NYC → Ada,  SF → Bob</code></pre>
+
+  <h3>11.3 · sorted — nullsFirst / nullsLast, reversed chains</h3>
+  <pre><code class="java">// sort by city (nulls last), then salary descending
+List&lt;String&gt; rawCities = Arrays.asList("NYC", null, "SF", null, "NYC");
+List&lt;String&gt; sortedCities = rawCities.stream()
+    .sorted(Comparator.nullsLast(Comparator.naturalOrder()))
+    .toList();
+// [NYC, NYC, SF, null, null]
+
+// multi-key: dept A→Z, then salary desc, then name A→Z
+List&lt;Employee&gt; ordered = emps.stream()
+    .sorted(Comparator.comparing(Employee::dept)
+        .thenComparing(Comparator.comparingDouble(Employee::salary).reversed())
+        .thenComparing(Employee::name))
+    .toList();
+// Engineering: Bob(110k), Grace(105k), Ada(95k)
+// HR: Eve(74k), Frank(71k)
+// Sales: Dee(68k), Cy(62k)</code></pre>
+
+  <h3>11.4 · peek — pipeline debugging</h3>
+  <p><code>peek</code> is for <strong>inspection only</strong> — never use it for side effects you
+  depend on, because lazy evaluation means it may not be called the way you expect.</p>
+  <pre><code class="java">List&lt;String&gt; result = emps.stream()
+    .peek(e -> System.out.println("  before filter: " + e.name()))
+    .filter(e -> e.salary() &gt; 80_000)
+    .peek(e -> System.out.println("  after  filter: " + e.name()))
+    .map(Employee::name)
+    .peek(n -> System.out.println("  after  map:    " + n))
+    .toList();
+// before filter: Ada
+// after  filter: Ada
+// after  map:    Ada
+// before filter: Bob
+// after  filter: Bob  ... etc.
+// Shows the element-by-element pull model — not batch-then-batch</code></pre>
+
+  <h3>11.5 · limit + skip — pagination</h3>
+  <pre><code class="java">int pageSize = 2;
+int pageNum  = 1;   // 0-indexed
+
+// page 0: [Ada, Bob],  page 1: [Cy, Dee],  page 2: [Eve, Frank], ...
+List&lt;String&gt; page = emps.stream()
+    .sorted(Comparator.comparing(Employee::name))
+    .skip((long) pageNum * pageSize)
+    .limit(pageSize)
+    .map(Employee::name)
+    .toList();
+// [Cy, Dee]
+
+// total pages
+long total = emps.stream().count();
+int  pages = (int) Math.ceil((double) total / pageSize);   // 4</code></pre>
+
+  <h3>11.6 · takeWhile + dropWhile <span class="badge added">Java 9</span></h3>
+  <p>Unlike <code>filter</code>, these operate on a <strong>leading run</strong> — they stop (or start)
+  at the first element that fails the predicate.</p>
+  <pre><code class="java">// stream already sorted by salary ascending
+List&lt;Employee&gt; bySalary = emps.stream()
+    .sorted(Comparator.comparingDouble(Employee::salary))
+    .toList();
+// [Cy(62k), Dee(68k), Eve(74k), Frank(71k), Ada(95k), Grace(105k), Bob(110k)]
+// note: Frank(71k) is out of strict order relative to Eve(74k) after sort — they're equal
+
+// takeWhile: keep elements while salary < 80k (stops at first failure)
+List&lt;String&gt; under80k = bySalary.stream()
+    .takeWhile(e -> e.salary() &lt; 80_000)
+    .map(Employee::name).toList();
+// [Cy, Dee, Eve, Frank]  — stops at Ada (95k)
+
+// dropWhile: skip elements while salary < 80k (starts emitting at first failure)
+List&lt;String&gt; from80k = bySalary.stream()
+    .dropWhile(e -> e.salary() &lt; 80_000)
+    .map(Employee::name).toList();
+// [Ada, Grace, Bob]</code></pre>
+  <div class="warn"><code>takeWhile</code>/<code>dropWhile</code> only work correctly on a stream that is
+  already ordered by the same key you are testing. On an unordered stream, the cut point is arbitrary.</div>
+
+  <h3>11.7 · Stream.iterate — bounded infinite sequence <span class="badge added">Java 9 (3-arg)</span></h3>
+  <pre><code class="java">// Java 8: 2-arg — infinite, must limit()
+List&lt;Integer&gt; powersOf2 = Stream.iterate(1, n -> n * 2)
+    .limit(8)
+    .toList();
+// [1, 2, 4, 8, 16, 32, 64, 128]
+
+// Java 9: 3-arg — built-in termination predicate, no limit() needed
+List&lt;Integer&gt; under1000 = Stream.iterate(1, n -> n &lt; 1000, n -> n * 2)
+    .toList();
+// [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+
+// generate working-day dates for next 5 business days
+LocalDate today = LocalDate.now();
+List&lt;LocalDate&gt; bizDays = Stream.iterate(today.plusDays(1), d -> d.plusDays(1))
+    .filter(d -> d.getDayOfWeek() != DayOfWeek.SATURDAY
+              &amp;&amp; d.getDayOfWeek() != DayOfWeek.SUNDAY)
+    .limit(5)
+    .toList();</code></pre>
+
+  <h3>11.8 · Stream.generate — stateless infinite source</h3>
+  <pre><code class="java">// random sample of 5 employees
+Random rng = new Random(42);
+List&lt;Employee&gt; sample = Stream.generate(() -> emps.get(rng.nextInt(emps.size())))
+    .distinct()
+    .limit(3)
+    .toList();
+
+// generate UUIDs
+List&lt;String&gt; ids = Stream.generate(() -> UUID.randomUUID().toString())
+    .limit(5)
+    .toList();
+
+// repeat a sentinel value (useful for test data)
+List&lt;String&gt; blanks = Stream.generate(() -> "").limit(10).toList();</code></pre>
+
+  <h3>11.9 · Stream.concat — merge two streams</h3>
+  <pre><code class="java">List&lt;Employee&gt; nyc = emps.stream().filter(e -> e.city().equals("NYC")).toList();
+List&lt;Employee&gt; sf  = emps.stream().filter(e -> e.city().equals("SF")).toList();
+
+// merge and de-duplicate names
+List&lt;String&gt; allNames = Stream.concat(nyc.stream(), sf.stream())
+    .map(Employee::name)
+    .distinct()
+    .sorted()
+    .toList();
+// [Ada, Bob, Cy, Dee, Eve, Frank, Grace]
+
+// concat three or more: nest concat calls
+Stream&lt;String&gt; three = Stream.concat(
+    Stream.concat(Stream.of("a", "b"), Stream.of("c", "d")),
+    Stream.of("e", "f"));
+// a, b, c, d, e, f</code></pre>
+  <div class="tip">For more than two streams use <code>Stream.of(s1, s2, s3).flatMap(s -> s)</code>
+  instead of deeply nested <code>concat</code>.</div>
+
+  <h3>11.10 · unordered — unlock parallel optimisations</h3>
+  <pre><code class="java">// when encounter order doesn't matter, unordered() lets parallel avoid order-maintenance overhead
+long count = emps.parallelStream()
+    .unordered()
+    .filter(e -> e.salary() &gt; 70_000)
+    .count();
+// same result — faster on large streams because parallel chunks don't need to merge in order</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="numeric">12 · Numeric &amp; primitive streams</h2>
+  <p><code>IntStream</code>, <code>LongStream</code>, <code>DoubleStream</code> eliminate boxing
+  overhead and add numeric-only operations: <code>sum</code>, <code>average</code>,
+  <code>summaryStatistics</code>, and closed-range generation.</p>
+
+  <h3>12.1 · IntStream.range / rangeClosed — index-based loops</h3>
+  <pre><code class="java">// replace for(int i=0; i<10; i++) loops
+IntStream.range(0, 10).forEach(i -> System.out.print(i + " "));
+// 0 1 2 3 4 5 6 7 8 9
+
+// sum 1 to 100
+int sum = IntStream.rangeClosed(1, 100).sum();   // 5050
+
+// generate a list of squares
+List&lt;Integer&gt; squares = IntStream.rangeClosed(1, 10)
+    .map(i -> i * i)
+    .boxed()
+    .toList();
+// [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]
+
+// index + element (zip index into stream)
+List&lt;String&gt; indexed = IntStream.range(0, emps.size())
+    .mapToObj(i -> (i + 1) + ". " + emps.get(i).name())
+    .toList();
+// [1. Ada, 2. Bob, 3. Cy, 4. Dee, 5. Eve, 6. Frank, 7. Grace]</code></pre>
+
+  <h3>12.2 · mapToInt / mapToLong / mapToDouble — object → primitive</h3>
+  <pre><code class="java">// salary stats without boxing
+IntSummaryStatistics salaryStats = emps.stream()
+    .mapToInt(e -> (int) e.salary())
+    .summaryStatistics();
+// IntSummaryStatistics{count=7, sum=585000, min=62000, average=83571.4, max=110000}
+
+// total order value (double precision)
+double totalRevenue = orders.stream()
+    .mapToDouble(Order::amount)
+    .sum();
+// 5885.0
+
+// LongStream for large numbers (avoid int overflow)
+long factorial10 = LongStream.rangeClosed(1, 10).reduce(1L, Math::multiplyExact);
+// 3628800</code></pre>
+
+  <h3>12.3 · summaryStatistics — all five metrics in one pass</h3>
+  <pre><code class="java">DoubleSummaryStatistics ds = emps.stream()
+    .mapToDouble(Employee::salary)
+    .summaryStatistics();
+
+System.out.printf("""
+    Count  : %d
+    Sum    : $%,.0f
+    Min    : $%,.0f
+    Max    : $%,.0f
+    Average: $%,.2f%n""",
+    ds.getCount(), ds.getSum(), ds.getMin(), ds.getMax(), ds.getAverage());
+// Count  : 7
+// Sum    : $585,000
+// Min    : $62,000
+// Max    : $110,000
+// Average: $83,571.43</code></pre>
+
+  <h3>12.4 · average / sum / min / max — standalone terminals</h3>
+  <pre><code class="java">OptionalDouble avg    = emps.stream().mapToDouble(Employee::salary).average();
+double         total  = emps.stream().mapToDouble(Employee::salary).sum();
+OptionalInt    minStk = products.stream().mapToInt(Product::stock).min();
+OptionalInt    maxStk = products.stream().mapToInt(Product::stock).max();
+
+// safe extraction
+double safeAvg = avg.orElse(0.0);
+
+// average price of products with stock &gt; 50
+OptionalDouble avgPrice = products.stream()
+    .filter(p -> p.stock() &gt; 50)
+    .mapToDouble(Product::price)
+    .average();
+// OptionalDouble[36.32...]   (T-Shirt + Java Book + Jeans + Novel)</code></pre>
+
+  <h3>12.5 · LongStream — large-number sequences</h3>
+  <pre><code class="java">// Fibonacci up to the first value &gt; 1,000,000
+// (state carried in a long[2] via iterate)
+long fibOver1M = LongStream.iterate(
+        new long[]{0, 1},
+        arr -> arr[0] &lt;= 1_000_000,
+        arr -> new long[]{arr[1], arr[0] + arr[1]})
+    .mapToLong(arr -> arr[0])
+    .max()
+    .orElse(-1);
+// 832040 (last Fibonacci number ≤ 1,000,000)
+
+// Note: Stream.iterate with long[] isn't a LongStream directly; using Stream&lt;long[]&gt;:
+long result = Stream.iterate(new long[]{0,1}, a -> new long[]{a[1], a[0]+a[1]})
+    .limit(20)
+    .mapToLong(a -> a[0])
+    .max()
+    .orElse(0);
+// 4181  (20th Fibonacci number)</code></pre>
+
+  <h3>12.6 · boxed() / asLongStream() / asDoubleStream() — conversions</h3>
+  <pre><code class="java">// IntStream → Stream&lt;Integer&gt;
+Stream&lt;Integer&gt; boxed = IntStream.range(1, 6).boxed();
+
+// IntStream → LongStream (widen)
+LongStream widened = IntStream.range(1, 6).asLongStream();
+
+// IntStream → DoubleStream (widen)
+DoubleStream dbl = IntStream.range(1, 6).asDoubleStream();
+
+// practical: collect IntStream to a List
+List&lt;Integer&gt; list = IntStream.rangeClosed(1, 5).boxed().toList();
+// [1, 2, 3, 4, 5]</code></pre>
+
+  <h3>12.7 · flatMapToInt — flatten int arrays / nested counts</h3>
+  <pre><code class="java">// total characters across all product names (without boxing)
+int totalChars = products.stream()
+    .flatMapToInt(p -> IntStream.of(p.name().length()))
+    .sum();
+// 6+7+9+5+5+5 = 37
+
+// flatten a list of int arrays
+List&lt;int[]&gt; matrix = List.of(new int[]{1,2,3}, new int[]{4,5}, new int[]{6,7,8,9});
+int[] flat = matrix.stream()
+    .flatMapToInt(Arrays::stream)
+    .toArray();
+// [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+int flatSum = matrix.stream().flatMapToInt(Arrays::stream).sum();   // 45</code></pre>
+
+  <h3>12.8 · Generating numeric sequences</h3>
+  <pre><code class="java">// prime numbers up to 50 using IntStream + filter
+List&lt;Integer&gt; primes = IntStream.rangeClosed(2, 50)
+    .filter(n -> IntStream.rangeClosed(2, (int) Math.sqrt(n)).allMatch(i -> n % i != 0))
+    .boxed()
+    .toList();
+// [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]
+
+// running total (prefix sums) using iterate
+List&lt;Long&gt; prefixSums = LongStream.iterate(0, i -> i &lt; emps.size(), i -> i + 1)
+    .mapToObj(i -> emps.subList(0, (int)i + 1)
+        .stream().mapToLong(e -> (long)e.salary()).sum())
+    .toList();
+// [95000, 205000, 267000, 335000, 409000, 480000, 585000]
+
+// multiplication table row (5×1 to 5×10)
+IntStream.rangeClosed(1, 10).mapToObj(i -> "5 × " + i + " = " + (5 * i))
+    .forEach(System.out::println);</code></pre>
+
+  <!-- ============================================================ -->
+  <h2 id="advanced-collectors">13 · Advanced collector patterns</h2>
+
+  <h3>13.1 · Collectors.flatMapping <span class="badge added">Java 9</span></h3>
+  <p><code>flatMapping</code> is a downstream collector — it lets you flatMap <em>inside</em> a
+  <code>groupingBy</code>, producing a flat collection per group instead of a nested one.</p>
+  <pre><code class="java">// dept → flat set of all tags of products (hypothetical: employees carry skills)
+// Here: category → flat unique set of all product tags in that category
+Map&lt;String, Set&lt;String&gt;&gt; tagsByCategory = products.stream()
+    .collect(groupingBy(Product::category,
+             flatMapping(p -> p.tags().stream(), toSet())));
+// Books       → [tech, education, fiction, leisure]
+// Clothing    → [casual, summer, denim]
+// Electronics → [tech, premium, work]
+
+// without flatMapping you'd need a second stream pass:
+// groupingBy → List&lt;List&lt;String&gt;&gt; → then flatMap — flatMapping does it in one shot</code></pre>
+
+  <h3>13.2 · toUnmodifiableList / Set / Map <span class="badge added">Java 10</span></h3>
+  <pre><code class="java">// guaranteed unmodifiable result — throws UnsupportedOperationException on add/put
+List&lt;String&gt; immutableNames = emps.stream()
+    .map(Employee::name)
+    .collect(toUnmodifiableList());
+
+Set&lt;String&gt; immutableDepts = emps.stream()
+    .map(Employee::dept)
+    .collect(toUnmodifiableSet());
+
+Map&lt;String, Double&gt; immutableSalaries = emps.stream()
+    .collect(toUnmodifiableMap(Employee::name, Employee::salary));
+// all three: immutableNames.add("X") → UnsupportedOperationException</code></pre>
+
+  <h3>13.3 · Collectors.filtering <span class="badge added">Java 9</span> — scoped filter inside a downstream</h3>
+  <p>Unlike <code>stream().filter()</code> which applies before grouping, <code>filtering</code> inside
+  a downstream applies <em>per group</em> — empty groups still appear in the result.</p>
+  <pre><code class="java">// groupingBy dept, but only count ACTIVE employees per dept
+// filter().groupingBy → missing-dept problem: inactive depts disappear entirely
+Map&lt;String, Long&gt; activeCountWrong = emps.stream()
+    .filter(Employee::active)               // inactive depts silently vanish
+    .collect(groupingBy(Employee::dept, counting()));
+// {Engineering=2, HR=2, Sales=1}   — Sales only shows 1 (Dee is inactive)
+
+// filtering() downstream: all depts present, count reflects active only
+Map&lt;String, Long&gt; activeCountRight = emps.stream()
+    .collect(groupingBy(Employee::dept,
+             filtering(Employee::active, counting())));
+// {Engineering=2, HR=2, Sales=1}  — same here because Dee is in Sales
+// But if ALL Sales were inactive, first approach drops "Sales" key entirely;
+// filtering() keeps it with count=0</code></pre>
+
+  <h3>13.4 · counting() vs .count() — when they differ</h3>
+  <pre><code class="java">// .count() — terminal op, simplest
+long n1 = emps.stream().filter(Employee::active).count();   // 5
+
+// counting() — downstream Collector; use INSIDE collect() only
+long n2 = emps.stream().collect(filtering(Employee::active, counting()));   // 5
+
+// in a groupingBy, counting() is the right tool (count() can't be a downstream)
+Map&lt;String, Long&gt; perDept = emps.stream()
+    .collect(groupingBy(Employee::dept, counting()));
+// {Engineering=3, HR=2, Sales=2}</code></pre>
+
+  <h3>13.5 · groupingByConcurrent — parallel-friendly grouping</h3>
+  <pre><code class="java">// on a very large list with parallelStream(), groupingByConcurrent avoids
+// merging partial maps — it accumulates directly into a shared ConcurrentMap
+ConcurrentMap&lt;String, List&lt;Employee&gt;&gt; concurrentByDept = emps.parallelStream()
+    .collect(groupingByConcurrent(Employee::dept));
+// same result as groupingBy but uses a ConcurrentHashMap underneath —
+// encounter order within each group's list is NOT guaranteed</code></pre>
+  <div class="warn"><code>groupingByConcurrent</code> is <strong>unordered</strong> — elements within
+  each group's list may appear in any order. Use <code>groupingBy</code> when order matters.</div>
+
+  <!-- ============================================================ -->
+  <h2 id="shortcircuit">14 · Short-circuit &amp; matching terminals</h2>
+  <p>These terminals stop the pipeline as soon as the answer is known — they don't consume the whole stream.</p>
+
+  <h3>14.1 · anyMatch / allMatch / noneMatch</h3>
+  <pre><code class="java">// anyMatch: stops at first TRUE element
+boolean anyInactive  = emps.stream().anyMatch(e -> !e.active());           // true (Dee)
+boolean anyOver200k  = emps.stream().anyMatch(e -> e.salary() &gt; 200_000); // false
+
+// allMatch: stops at first FALSE element
+boolean allActive    = emps.stream().allMatch(Employee::active);            // false
+boolean allPositive  = orders.stream().allMatch(o -> o.amount() &gt; 0);      // true
+
+// noneMatch: stops at first TRUE element
+boolean noneNegative = orders.stream().noneMatch(o -> o.amount() &lt; 0);     // true
+boolean noneEngInSF  = emps.stream()
+    .filter(e -> e.dept().equals("Engineering"))
+    .noneMatch(e -> e.city().equals("SF"));                                 // false (Bob)
+
+// compose with Predicate for reuse
+Predicate&lt;Employee&gt; highPaid = e -> e.salary() &gt;= 100_000;
+boolean deptHasHighPaid = emps.stream()
+    .filter(e -> e.dept().equals("Engineering"))
+    .anyMatch(highPaid);   // true</code></pre>
+
+  <h3>14.2 · findFirst vs findAny</h3>
+  <pre><code class="java">// findFirst — deterministic, respects encounter order
+Optional&lt;Employee&gt; first = emps.stream()
+    .filter(e -> e.dept().equals("HR"))
+    .findFirst();
+// Optional[Eve]   — always Eve (first HR employee in list order)
+
+// findAny — no order guarantee; parallel streams may return any matching element
+Optional&lt;Employee&gt; any = emps.parallelStream()
+    .filter(e -> e.dept().equals("HR"))
+    .findAny();
+// Optional[Eve] or Optional[Frank] — non-deterministic under parallel()
+
+// safe consumption pattern
+emps.stream()
+    .filter(e -> e.salary() &gt; 100_000)
+    .findFirst()
+    .ifPresent(e -> System.out.println("First 100k+: " + e.name()));
+// First 100k+: Bob</code></pre>
+
+  <h3>14.3 · min / max as terminal ops</h3>
+  <pre><code class="java">// cheapest product
+Optional&lt;Product&gt; cheapest = products.stream()
+    .min(Comparator.comparingDouble(Product::price));
+// Optional[Novel(14.99)]
+
+// most expensive order per customer (using groupingBy + maxBy)
+Map&lt;String, Optional&lt;Order&gt;&gt; biggestOrderPerCustomer = orders.stream()
+    .collect(groupingBy(Order::customerId,
+             maxBy(Comparator.comparingDouble(Order::amount))));
+// C1 → O1($1200), C2 → O6($3100), C3 → O6... wait — C3 has O6($3100)
+
+// unwrapped version
+Map&lt;String, Order&gt; biggestUnwrapped = orders.stream()
+    .collect(groupingBy(Order::customerId,
+             collectingAndThen(
+                 maxBy(Comparator.comparingDouble(Order::amount)),
+                 Optional::get)));
+// C1 → O1(1200), C2 → O6(3100), C3 → O6(3100)</code></pre>
+
+  <h3>14.4 · toArray — when you need an array, not a List</h3>
+  <pre><code class="java">// Object[] (untyped)
+Object[] arr = emps.stream().map(Employee::name).toArray();
+
+// typed array via generator
+String[] names = emps.stream().map(Employee::name).toArray(String[]::new);
+
+// primitive array
+double[] salaries = emps.stream().mapToDouble(Employee::salary).toArray();
+// [95000.0, 110000.0, 62000.0, 68000.0, 74000.0, 71000.0, 105000.0]</code></pre>
+
+  <h3>14.5 · forEachOrdered — guaranteed order in parallel streams</h3>
+  <pre><code class="java">// forEach in a parallel stream may print in any order
+emps.parallelStream().forEach(e -> System.out.println(e.name()));  // random order
+
+// forEachOrdered preserves encounter order, even in parallel
+emps.parallelStream().forEachOrdered(e -> System.out.println(e.name()));
+// Ada, Bob, Cy, Dee, Eve, Frank, Grace  — always in list order</code></pre>
+  <div class="tip"><code>forEachOrdered</code> negates most of the parallelism benefit — use
+  <code>toList()</code> + iterate the list if you need order.</div>
+
+  <!-- ============================================================ -->
   <h2 id="cheat">Quick reference</h2>
   <div class="cheat">
     <h3>Pattern → Collector cheat sheet</h3>
@@ -738,11 +1232,45 @@ atRisk.forEach((cat, stats) -&gt;
       <tr><td>Delimited string</td><td><code>joining(", ", "[", "]")</code></td></tr>
       <tr><td>Post-process result</td><td><code>collectingAndThen(downstream, finisher)</code></td></tr>
       <tr><td>Lookup map</td><td><code>toMap(keyFn, valueFn, mergeFn)</code></td></tr>
+      <tr><td>Flatten inside groupingBy</td><td><code>flatMapping(fn, toSet())</code> <span class="badge added">9</span></td></tr>
       <tr><td>Flatten nested lists</td><td><code>flatMap(e -> e.getList().stream())</code></td></tr>
-      <tr><td>Filter inside group</td><td><code>filtering(pred, downstream)</code> <span class="badge added">9</span></td></tr>
+      <tr><td>Filter inside group (keeps empty groups)</td><td><code>filtering(pred, downstream)</code> <span class="badge added">9</span></td></tr>
       <tr><td>Unwrap Optionals in stream</td><td><code>flatMap(Optional::stream)</code> <span class="badge added">9</span></td></tr>
       <tr><td>Custom aggregation</td><td><code>Collector.of(supplier, accumulator, combiner, finisher)</code></td></tr>
       <tr><td>All stats in one pass</td><td><code>summarizingDouble(fn)</code> → min/max/avg/sum/count</td></tr>
+      <tr><td>Immutable result</td><td><code>toUnmodifiableList/Set/Map</code> <span class="badge added">10</span></td></tr>
+      <tr><td>Parallel grouping (unordered)</td><td><code>groupingByConcurrent</code></td></tr>
+    </table>
+
+    <h3>Intermediate op quick-pick</h3>
+    <table class="data">
+      <tr><th>Need</th><th>Op</th></tr>
+      <tr><td>Keep elements matching condition</td><td><code>filter(Predicate)</code></td></tr>
+      <tr><td>Compose predicates</td><td><code>pred.and(p2)</code> / <code>pred.or(p2)</code> / <code>pred.negate()</code></td></tr>
+      <tr><td>Transform 1-to-1</td><td><code>map(Function)</code></td></tr>
+      <tr><td>Transform 1-to-many</td><td><code>flatMap(e -> e.getList().stream())</code></td></tr>
+      <tr><td>Imperative 1-to-many (no stream allocation)</td><td><code>mapMulti</code> <span class="badge added">16</span></td></tr>
+      <tr><td>Remove duplicates (equals)</td><td><code>distinct()</code></td></tr>
+      <tr><td>De-dup by field</td><td>stateful <code>filter(seen::add)</code> or <code>toMap(…, mergeFn)</code></td></tr>
+      <tr><td>Sort</td><td><code>sorted(Comparator.comparing(fn).thenComparing(…))</code></td></tr>
+      <tr><td>First N elements</td><td><code>limit(n)</code></td></tr>
+      <tr><td>Skip first N</td><td><code>skip(n)</code></td></tr>
+      <tr><td>Leading-run slice</td><td><code>takeWhile(pred)</code> / <code>dropWhile(pred)</code> <span class="badge added">9</span></td></tr>
+      <tr><td>Inspect without changing</td><td><code>peek(Consumer)</code> — debugging only</td></tr>
+      <tr><td>Generate bounded sequence</td><td><code>Stream.iterate(seed, hasNext, next)</code> <span class="badge added">9</span></td></tr>
+      <tr><td>Merge two streams</td><td><code>Stream.concat(s1, s2)</code></td></tr>
+    </table>
+
+    <h3>Numeric stream quick-pick</h3>
+    <table class="data">
+      <tr><th>Need</th><th>Op</th></tr>
+      <tr><td>Index-based loop</td><td><code>IntStream.range(0, n)</code></td></tr>
+      <tr><td>1 to N inclusive</td><td><code>IntStream.rangeClosed(1, n)</code></td></tr>
+      <tr><td>Object stream → primitive</td><td><code>mapToInt</code> / <code>mapToLong</code> / <code>mapToDouble</code></td></tr>
+      <tr><td>Primitive → object</td><td><code>.boxed()</code></td></tr>
+      <tr><td>All 5 stats in one pass</td><td><code>.summaryStatistics()</code></td></tr>
+      <tr><td>Flatten int arrays</td><td><code>flatMapToInt(Arrays::stream)</code></td></tr>
+      <tr><td>Large numbers (avoid overflow)</td><td><code>LongStream</code> / <code>mapToLong</code></td></tr>
     </table>
   </div>
 
