@@ -80,9 +80,9 @@
   </p>
 
   <div class="hero-stats">
-    <div class="stat"><span class="num" id="total-count">87</span><span class="lbl">examples</span></div>
+    <div class="stat"><span class="num" id="total-count">95</span><span class="lbl">examples</span></div>
     <div class="stat"><span class="num">18</span><span class="lbl">Java versions</span></div>
-    <div class="stat"><span class="num">6</span><span class="lbl">categories</span></div>
+    <div class="stat"><span class="num">7</span><span class="lbl">categories</span></div>
     <div class="stat"><span class="num">stable</span><span class="lbl">features only</span></div>
   </div>
 
@@ -116,6 +116,7 @@
       <option value="concurrency">Concurrency</option>
       <option value="api">API</option>
       <option value="tooling">Tooling / JVM</option>
+      <option value="security">Security</option>
     </select>
     <span class="ba-count" id="ba-count">87 examples</span>
   </div>
@@ -1736,6 +1737,171 @@ $ java -XX:AOTCache=app.aot -jar app.jar
 // Benefits: connection reuse, 0-RTT, no head-of-line blocking</code></pre></div>
     </div>
     <p class="ba-note">Java 26 — the built-in <code>HttpClient</code> no longer needs an external library for HTTP/3. Zero additional dependencies.</p>
+  </div>
+
+  <!-- ══════════════════════════ SECURITY ══════════════════════════ -->
+
+  <div class="ba-card" data-ver="9" data-cat="security">
+    <div class="ba-header"><span class="ba-title">PKCS12 as default keystore format</span><span class="badge added">Java 9</span><span class="ba-cat">Security</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// JKS (Java KeyStore) was the default — proprietary,
+// no password protection per entry, Sun-specific.
+// keytool -genkeypair -keystore mykeys.jks -storetype JKS
+KeyStore ks = KeyStore.getInstance("JKS");
+ks.load(new FileInputStream("mykeys.jks"),
+    "changeit".toCharArray());</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// PKCS12 is now the default — industry standard (RFC 7292),
+// interoperable with OpenSSL, stronger key protection.
+// keytool -genkeypair -keystore mykeys.p12   (no -storetype needed)
+KeyStore ks = KeyStore.getInstance("PKCS12");
+ks.load(new FileInputStream("mykeys.p12"),
+    "changeit".toCharArray());
+// Or just: KeyStore.getInstance(KeyStore.getDefaultType())</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 229 — existing JKS keystores can be converted: <code>keytool -importkeystore -srckeystore old.jks -destkeystore new.p12 -deststoretype PKCS12</code>.</p>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="security">
+    <div class="ba-header"><span class="ba-title">SHA-3 hash algorithms</span><span class="badge added">Java 9</span><span class="ba-cat">Security</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Only SHA-2 family available in standard JDK
+MessageDigest md = MessageDigest.getInstance("SHA-256");
+byte[] hash = md.digest(data);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// SHA-3 family now built in (NIST FIPS 202)
+MessageDigest md3   = MessageDigest.getInstance("SHA3-256");
+MessageDigest md3_5 = MessageDigest.getInstance("SHA3-512");
+byte[] hash = md3.digest(data);
+
+// SHAKE variants for variable-length output:
+MessageDigest shake128 = MessageDigest.getInstance("SHAKE128");</code></pre></div>
+    </div>
+    <p class="ba-note">Java 9 — SHA-3 uses the Keccak sponge construction, structurally different from SHA-2. Prefer SHA3-256/SHA3-512 for new systems needing algorithm agility.</p>
+  </div>
+
+  <div class="ba-card" data-ver="9" data-cat="security">
+    <div class="ba-header"><span class="ba-title">Deserialization filters — whitelist trusted types</span><span class="badge added">Java 9</span><span class="ba-cat">Security</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// No built-in protection — any class on the classpath
+// could be instantiated via a deserialization gadget chain.
+ObjectInputStream ois =
+    new ObjectInputStream(new FileInputStream("data.ser"));
+MyObject obj = (MyObject) ois.readObject();</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">ObjectInputStream ois =
+    new ObjectInputStream(new FileInputStream("data.ser"));
+
+// Whitelist only the classes you actually expect:
+ois.setObjectInputFilter(ObjectInputFilter.Config.createFilter(
+    "com.example.MyObject;java.util.ArrayList;!*"));
+// "!*" rejects everything not explicitly listed
+MyObject obj = (MyObject) ois.readObject();</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 290 — also set a JVM-wide default via <code>-Djdk.serialFilter=...</code> or <code>ObjectInputFilter.Config.setSerialFilter()</code>. Enhanced in Java 17 (JEP 415) for context-specific per-stream filters.</p>
+  </div>
+
+  <div class="ba-card" data-ver="11" data-cat="security">
+    <div class="ba-header"><span class="ba-title">TLS 1.3 support</span><span class="badge added">Java 11</span><span class="ba-cat">Security</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// TLS 1.2 only; negotiated by default
+SSLContext ctx = SSLContext.getInstance("TLSv1.2");
+ctx.init(keyManagers, trustManagers, null);
+
+// HttpURLConnection had no way to specify TLS version
+// without custom SSLSocketFactory wiring</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// TLS 1.3 supported natively; HttpClient negotiates it automatically
+HttpClient client = HttpClient.newBuilder()
+    .sslContext(SSLContext.getDefault())
+    .build();
+// TLS 1.3 is negotiated if the server supports it
+
+// Explicit if needed:
+SSLContext ctx = SSLContext.getInstance("TLSv1.3");
+ctx.init(keyManagers, trustManagers, null);</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 332 — TLS 1.3 brings 1-RTT handshakes, 0-RTT resumption (off by default), forward secrecy on every connection, and removes insecure legacy algorithms.</p>
+  </div>
+
+  <div class="ba-card" data-ver="11" data-cat="security">
+    <div class="ba-header"><span class="ba-title">ChaCha20-Poly1305 cipher</span><span class="badge added">Java 11</span><span class="ba-cat">Security</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// AES/GCM requires hardware AES acceleration to be fast.
+// On devices without AES-NI (older ARM, IoT) it was slow.
+Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+cipher.init(Cipher.ENCRYPT_MODE, key, gcmSpec);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// ChaCha20-Poly1305: fast in software, no hardware needed.
+// Same 256-bit security level as AES-256-GCM.
+Cipher cipher =
+    Cipher.getInstance("ChaCha20-Poly1305");
+ChaCha20ParameterSpec spec =
+    new ChaCha20ParameterSpec(nonce, 0);
+cipher.init(Cipher.ENCRYPT_MODE, key, spec);</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 329 — preferred for constrained environments (mobile, IoT) where AES hardware acceleration is absent. Used by TLS 1.3 as an alternative to AES-GCM.</p>
+  </div>
+
+  <div class="ba-card" data-ver="17" data-cat="security">
+    <div class="ba-header"><span class="ba-title">Context-specific deserialization filters (per-stream)</span><span class="badge added">Java 17</span><span class="ba-cat">Security</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Java 9 filters were per-stream or JVM-wide (static).
+// No way to install a dynamic factory that decides
+// the filter based on context (caller, purpose, etc.)
+ObjectInputFilter.Config.setSerialFilter(staticFilter);</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Install a filter FACTORY — called fresh for each stream
+ObjectInputFilter.Config.setSerialFilterFactory(
+    (current, next) -&gt; {
+        // 'current' = existing filter on the stream
+        // 'next' = the new candidate filter
+        // Return the filter to use for this particular stream:
+        return ObjectInputFilter.Config.createFilter(
+            "com.example.*;java.util.*;!*");
+    });
+// Each stream gets its own filter decision</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 415 — the factory receives the stream's existing filter and the proposed new one; it can merge, replace, or augment. Ideal for frameworks that deserialize on behalf of multiple callers with different trust levels.</p>
+  </div>
+
+  <div class="ba-card" data-ver="21" data-cat="security">
+    <div class="ba-header"><span class="ba-title">Key Encapsulation Mechanism (KEM) API</span><span class="badge added">Java 21</span><span class="ba-cat">Security</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// KEM algorithms (DHKEM, Kyber) needed BouncyCastle
+// or manual implementation; no standard JDK API existed.
+import org.bouncycastle.crypto.kem.*;
+// ... provider-specific, non-portable code</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// Sender: encapsulate a secret
+KEM kem           = KEM.getInstance("DHKEM(X25519, HKDF-SHA256)");
+KEM.Encapsulator  enc = kem.newEncapsulator(recipientPublicKey);
+KEM.Encapsulated  enc2 = enc.encapsulate();
+byte[]  ciphertext = enc2.encapsulation();  // send to recipient
+SecretKey sharedKey = enc2.key();           // used for AES/GCM
+
+// Receiver: decapsulate
+KEM.Decapsulator  dec = kem.newDecapsulator(recipientPrivateKey);
+SecretKey sharedKey2  = dec.decapsulate(ciphertext);</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 452 — a standard API for algorithms like DHKEM (X25519/X448) and post-quantum Kyber. Separates key agreement from data encryption, which is the foundation of hybrid encryption.</p>
+  </div>
+
+  <div class="ba-card" data-ver="24" data-cat="security">
+    <div class="ba-header"><span class="ba-title">Post-quantum cryptography — ML-KEM (Kyber)</span><span class="badge added">Java 24</span><span class="ba-cat">Security</span></div>
+    <div class="ba-split">
+      <div class="ba-pane"><div class="ba-label old">Old</div><pre><code class="java">// Classic key exchange algorithms (RSA, ECDH) are broken
+// by a sufficiently powerful quantum computer.
+KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
+kpg.initialize(new ECGenParameterSpec("secp256r1"));
+KeyPair pair = kpg.generateKeyPair();
+// Harvest-now-decrypt-later attacks already collecting traffic</code></pre></div>
+      <div class="ba-pane"><div class="ba-label new">Modern</div><pre><code class="java">// ML-KEM (CRYSTALS-Kyber) — quantum-resistant, NIST FIPS 203
+KeyPairGenerator kpg =
+    KeyPairGenerator.getInstance("ML-KEM");
+kpg.initialize(NamedParameterSpec.ML_KEM_768);
+KeyPair pair = kpg.generateKeyPair();
+
+// Use with the KEM API for key encapsulation:
+KEM kem = KEM.getInstance("ML-KEM");
+KEM.Encapsulated enc =
+    kem.newEncapsulator(pair.getPublic()).encapsulate();
+// ciphertext + sharedKey — safe against quantum adversaries</code></pre></div>
+    </div>
+    <p class="ba-note">JEP 496 (Java 24) — also <code>ML-DSA</code> (CRYSTALS-Dilithium) for quantum-resistant digital signatures (JEP 497). Parameter sets: ML-KEM-512, ML-KEM-768, ML-KEM-1024. Java 27 adds post-quantum TLS 1.3 by default.</p>
   </div>
 
   </div><!-- #ba-grid -->
