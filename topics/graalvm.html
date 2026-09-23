@@ -46,11 +46,14 @@
     <a href="#reflection">7. Reflection &amp; dynamic features</a>
     <a href="#build-tools">8. Maven &amp; Gradle integration</a>
     <a href="#spring-boot">9. Spring Boot native images</a>
-    <a href="#pgo">10. Profile-guided optimisation (PGO)</a>
-    <a href="#vs-aot">11. GraalVM vs JDK AOT Cache — comparison</a>
-    <a href="#when-to-use">12. When to use which</a>
-    <a href="#gotchas">13. Gotchas &amp; limitations</a>
-    <a href="#cheat-sheet">14. Cheat sheet</a>
+    <a href="#spring-aot-engine">10. How the Spring AOT engine works</a>
+    <a href="#spring-third-party">11. Third-party &amp; legacy library support</a>
+    <a href="#spring-breaks">12. What still breaks — and fixes</a>
+    <a href="#pgo">13. Profile-guided optimisation (PGO)</a>
+    <a href="#vs-aot">14. GraalVM vs JDK AOT Cache — comparison</a>
+    <a href="#when-to-use">15. When to use which</a>
+    <a href="#gotchas">16. Gotchas &amp; limitations</a>
+    <a href="#cheat-sheet">17. Cheat sheet</a>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -441,34 +444,289 @@ graalvmNative {
   <!-- ═══════════════════════════════════════════════════════════════ -->
   <h2 id="spring-boot">9. Spring Boot native images</h2>
   <p>
-    Spring Boot 3.x has first-class native image support via the Spring AOT engine.
-    At build time, Spring pre-processes all <code>@Configuration</code>, condition evaluation,
-    and component scanning — the results are baked in so Spring doesn't need to do them at
-    runtime.
+    Spring Boot 3.x / Spring Framework 6.0 added first-class native image support via a
+    built-in <strong>AOT engine</strong>. The short version: Spring does at build time everything
+    it used to do at startup — condition evaluation, component scanning, proxy generation — and
+    emits generated code and hint files that GraalVM's <code>native-image</code> consumes.
   </p>
-  <pre><code class="bash"># Spring Initializr: tick "GraalVM Native Support" when creating a project
-# Or add to existing Maven project:
-# mvn spring-boot:build-image -Pnative   (uses Buildpacks, produces a Docker image)
-# mvn -Pnative native:compile            (produces a local binary)
 
-# With Gradle:
+  <h3>Quick start</h3>
+  <pre><code class="bash"># New project: tick "GraalVM Native Support" at start.spring.io
+# Existing Maven project — add the native profile and plugin (see §8 Maven), then:
+
+# Local binary (fastest iteration)
+mvn -Pnative native:compile
+./target/myapp                     # starts in ~80–150 ms
+
+# OCI image via Buildpacks (production-ready container)
+mvn spring-boot:build-image -Pnative
+docker run myapp:latest
+
+# Gradle
 ./gradlew nativeCompile
-./build/native/nativeCompile/demo</code></pre>
+./build/native/nativeCompile/myapp</code></pre>
 
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Spring Boot + JVM</th><th>Spring Boot + Native Image</th></tr></thead>
+      <thead><tr><th>Metric</th><th>Spring Boot + JVM</th><th>Spring Boot + Native Image</th></tr></thead>
       <tbody>
-        <tr><td>~3–5 s startup</td><td>~80–150 ms startup</td></tr>
-        <tr><td>~300 MB heap at start</td><td>~40–80 MB RSS</td></tr>
-        <tr><td>Full dynamic features</td><td>Needs Spring AOT hints for non-obvious reflection</td></tr>
-        <tr><td>Warms up in ~30 s under load</td><td>No warm-up — but peak throughput lower</td></tr>
+        <tr><td>Startup</td><td>~3–5 s</td><td>~80–150 ms</td></tr>
+        <tr><td>Memory (RSS at start)</td><td>~300–500 MB</td><td>~40–80 MB</td></tr>
+        <tr><td>Peak throughput</td><td>100% (JIT-optimised)</td><td>~70–85% (add PGO to close the gap)</td></tr>
+        <tr><td>Dynamic features</td><td>All — full Java</td><td>Need Spring AOT hints for non-obvious reflection</td></tr>
+        <tr><td>Warm-up time under load</td><td>~30 s to reach peak</td><td>Zero — already at peak from first request</td></tr>
       </tbody>
     </table>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════ -->
-  <h2 id="pgo">10. Profile-guided optimisation (PGO)</h2>
+  <h2 id="spring-aot-engine">10. How the Spring AOT engine works</h2>
+  <p>
+    When you run <code>mvn -Pnative native:compile</code>, the build plugin first runs
+    <code>spring-boot:process-aot</code>, which launches a special JVM process (not <code>native-image</code>
+    yet) that does this:
+  </p>
+  <ol>
+    <li>
+      <strong>Partially starts the <code>ApplicationContext</code></strong> — loads all
+      <code>@Configuration</code> classes, evaluates every <code>@Conditional</code>, resolves
+      all component scanning, detects all beans.
+    </li>
+    <li>
+      <strong>Generates Java source code</strong> — instead of bean definitions that use
+      reflection at runtime, it emits explicit factory classes:
+      <code>UserServiceBeanDefinitions.java</code>,
+      <code>DataSourceAutoConfigurationBeanDefinitions.java</code>, etc. At runtime the native
+      binary calls these factory methods directly — no reflection, no scanning.
+    </li>
+    <li>
+      <strong>Emits resource hint files</strong> — everything native-image needs to know about
+      reflection, proxies, resources, and serialization:
+      <ul>
+        <li><code>reflect-config.json</code></li>
+        <li><code>proxy-config.json</code></li>
+        <li><code>resource-config.json</code></li>
+        <li><code>serialization-config.json</code></li>
+      </ul>
+      These are written to <code>target/spring-aot/main/resources/META-INF/native-image/</code>
+      and picked up automatically by <code>native-image</code>.
+    </li>
+  </ol>
+  <p>
+    After <code>process-aot</code> finishes, <code>native-image</code> compiles the application
+    <em>together with</em> the generated sources, so the binary has no need for Spring's
+    reflection-heavy initialisation logic at all.
+  </p>
+  <pre><code class="bash"># Inspect what Spring generated (very useful for debugging)
+ls target/spring-aot/main/
+# sources/      ← generated Java: *BeanDefinitions.java, proxy classes, hint registrars
+# resources/
+#   META-INF/native-image/
+#     reflect-config.json
+#     proxy-config.json
+#     resource-config.json
+#     serialization-config.json
+
+# Run only the AOT processing step (without native compilation) to check for errors early:
+mvn spring-boot:process-aot</code></pre>
+
+  <div class="tip">
+    <strong>Reading <code>target/spring-aot/main/sources/</code> is the best debugging tool</strong>
+    when a bean or library isn't working in native. It shows exactly what Spring decided to
+    generate — or failed to generate — for each bean.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="spring-third-party">11. Third-party &amp; legacy library support</h2>
+  <p>
+    The closed-world assumption breaks most libraries that use reflection internally. Spring
+    handles this through four layers applied in order — each layer covers more libraries
+    automatically, with less work from you.
+  </p>
+
+  <h3>Layer 1 — GraalVM Reachability Metadata Repository (automatic)</h3>
+  <p>
+    Oracle maintains a community-contributed repo at
+    <code>github.com/oracle/graalvm-reachability-metadata</code> with pre-built
+    <code>reflect-config.json</code> and friends for hundreds of mainstream libraries:
+    Jackson, Hibernate, HikariCP, Caffeine, Netty, PostgreSQL/MySQL drivers, Mockito, and more.
+    The <code>native-maven-plugin</code> and <code>native-gradle-plugin</code> pull the matching
+    version's metadata automatically at build time — you get native support for most mainstream
+    libraries <strong>without writing a single config file</strong>.
+  </p>
+  <pre><code class="xml">&lt;!-- The native-maven-plugin already wires this; no extra config needed --&gt;
+&lt;plugin&gt;
+  &lt;groupId&gt;org.graalvm.buildtools&lt;/groupId&gt;
+  &lt;artifactId&gt;native-maven-plugin&lt;/artifactId&gt;
+  &lt;version&gt;0.10.3&lt;/version&gt;
+  &lt;extensions&gt;true&lt;/extensions&gt;
+  &lt;!-- metadataRepository is enabled by default in recent versions --&gt;
+  &lt;configuration&gt;
+    &lt;metadataRepository&gt;
+      &lt;enabled&gt;true&lt;/enabled&gt;
+    &lt;/metadataRepository&gt;
+  &lt;/configuration&gt;
+&lt;/plugin&gt;</code></pre>
+
+  <h3>Layer 2 — Library ships a <code>RuntimeHintsRegistrar</code></h3>
+  <p>
+    A library that is aware of native compilation can ship a registrar class that Spring calls
+    during the AOT phase. Spring Boot's own starters all do this internally; well-maintained
+    third-party libraries (e.g. MapStruct, Micrometer, Flyway) do too.
+  </p>
+  <pre><code class="java">// Inside the library (not your code) — registered via META-INF/spring SPI or @ImportRuntimeHints
+public class JacksonRuntimeHints implements RuntimeHintsRegistrar {
+    @Override
+    public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+        hints.reflection()
+            .registerType(MyDto.class,
+                MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+                MemberCategory.INVOKE_PUBLIC_METHODS);
+        hints.resources()
+            .registerPattern("jackson-databind.properties");
+    }
+}
+
+// Activated via SPI file:
+// META-INF/spring/org.springframework.aot.hint.RuntimeHintsRegistrar
+// com.example.JacksonRuntimeHints</code></pre>
+
+  <h3>Layer 3 — <code>BeanRegistrationAotProcessor</code> (framework-level, per-bean)</h3>
+  <p>
+    For libraries that do complex per-bean reflection (Spring Data repositories, Spring Security
+    method security, Spring AOP advisors), there is a lower-level SPI that Spring calls once
+    per matching bean during AOT processing. This is how Spring Data turns a
+    <code>interface UserRepository extends JpaRepository&lt;User,Long&gt;</code> into generated
+    proxy code at build time so no dynamic proxy is needed at runtime.
+  </p>
+  <pre><code class="java">// Spring Data ships one of these internally — shown here for understanding
+public class RepositoryRegistrationAotProcessor
+        implements BeanRegistrationAotProcessor {
+
+    @Override
+    public BeanRegistrationAotContribution processAheadOfTime(
+            RegisteredBean registeredBean) {
+        // Called once per @Repository bean at build time.
+        // Returns code/hint contributions for that specific bean.
+        // Spring Data generates the concrete repository implementation here.
+        return ...; // contributes generated source + reflection hints
+    }
+}</code></pre>
+
+  <h3>Layer 4 — Tracing agent (fallback for unsupported libraries)</h3>
+  <p>
+    If a library has no entry in the reachability metadata repo and ships no hints, run the
+    GraalVM tracing agent against a real JVM run. It records every reflective access, dynamic
+    proxy creation, and resource load automatically.
+  </p>
+  <pre><code class="bash"># Run the app (or tests) with the agent — exercise ALL code paths you care about.
+# Use config-merge-dir (not config-output-dir) to accumulate across multiple runs.
+
+java -agentlib:native-image-agent=config-merge-dir=\
+src/main/resources/META-INF/native-image \
+     -jar app.jar
+
+# Re-run with additional scenarios to cover more code paths:
+java -agentlib:native-image-agent=config-merge-dir=\
+src/main/resources/META-INF/native-image \
+     -jar app.jar --scenario=checkout-flow
+
+# native-image (and Spring's build) picks up the generated files automatically.
+mvn -Pnative native:compile</code></pre>
+
+  <h3>Layer 5 — Manual annotation hints (your own code)</h3>
+  <p>
+    For DTO classes that a library will reflect on (Jackson, ModelMapper, etc.), annotate them
+    directly rather than writing JSON files:
+  </p>
+  <pre><code class="java">// Register a DTO for reflection (all public fields, constructors, methods)
+@RegisterReflectionForBinding(UserDto.class)
+@Configuration
+public class NativeConfig {
+
+    // For a whole package:
+    @Bean
+    public RuntimeHintsRegistrar myHints() {
+        return (hints, classLoader) -&gt; {
+            hints.reflection()
+                .registerType(LegacyParser.class,
+                    MemberCategory.DECLARED_FIELDS,
+                    MemberCategory.INVOKE_DECLARED_METHODS,
+                    MemberCategory.INVOKE_DECLARED_CONSTRUCTORS);
+            hints.resources()
+                .registerPattern("legacy-mappings/*.xml");
+        };
+    }
+}</code></pre>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="spring-breaks">12. What still breaks — and fixes</h2>
+  <p>
+    Some patterns cannot be made to work in native image regardless of hints, because they
+    fundamentally require generating or loading new code at runtime.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Pattern</th><th>Why it breaks</th><th>Fix / workaround</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Runtime CGLib subclassing</strong> (e.g. arbitrary CGLib usage outside Spring AOP)</td>
+          <td>Subclass doesn't exist at build time — can't be in the binary</td>
+          <td>Spring AOT generates CGLib subclasses for <code>@Configuration</code> and <code>@Transactional</code> at build time automatically. For arbitrary CGLib use outside Spring, you must refactor.</td>
+        </tr>
+        <tr>
+          <td><strong>Dynamic class loading</strong> (<code>URLClassLoader</code>, plugin systems)</td>
+          <td>Closed-world: all classes in the binary are fixed at build time</td>
+          <td>No native fix — deploy that module as a JVM service, or redesign as compile-time extension points</td>
+        </tr>
+        <tr>
+          <td><strong>Scripting engines</strong> (Groovy scripts, OGNL, SpEL at runtime)</td>
+          <td>Scripts compile new classes at runtime</td>
+          <td>Pre-compile scripts to a fixed set; or exclude from native profile and run on JVM</td>
+        </tr>
+        <tr>
+          <td><strong>Reflection on <code>com.sun.*</code> / JDK internals</strong></td>
+          <td>Strong encapsulation in native is stricter than <code>--add-opens</code> on the JVM</td>
+          <td>Replace with public API; or add <code>-H:AdditionalSecurityProviders</code> / <code>--add-opens</code> equivalent in native-image args</td>
+        </tr>
+        <tr>
+          <td><strong>Java serialization on unregistered classes</strong></td>
+          <td>Serialization reads field names by reflection — not found without registration</td>
+          <td>Add to <code>serialization-config.json</code> or use <code>hints.serialization().registerType(MyClass.class)</code>; prefer non-Java serialization (JSON, Protobuf) for new code</td>
+        </tr>
+        <tr>
+          <td><strong>JPA lazy loading via Hibernate bytecode enhancement</strong></td>
+          <td>Hibernate enhances entity bytecode at class-load time</td>
+          <td>Enable Hibernate's build-time bytecode enhancement (Maven/Gradle plugin); Spring Boot 3.x auto-configures this for native</td>
+        </tr>
+        <tr>
+          <td><strong>Old XML Spring config</strong> (<code>applicationContext.xml</code>)</td>
+          <td>XML parsing loads classes by string name at runtime — invisible to AOT</td>
+          <td>Migrate to <code>@Configuration</code> Java config; or register all referenced classes in <code>reflect-config.json</code> via the tracing agent</td>
+        </tr>
+        <tr>
+          <td><strong><code>Class.forName()</code> with a runtime-computed name</strong></td>
+          <td>Class name only known at runtime — not reachable from static analysis</td>
+          <td>Enumerate all possible names and register them; or use a fixed <code>switch</code> on known types</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Practical debugging checklist</h3>
+  <ol>
+    <li>Check <code>oracle/graalvm-reachability-metadata</code> — is the library listed? Are you on the required version?</li>
+    <li>Check the library's own docs for a "GraalVM", "native image", or "AOT" section.</li>
+    <li>Run <code>mvn spring-boot:process-aot</code> alone — does it fail? That points to a Spring-level problem (missing hints, broken condition).</li>
+    <li>Read <code>target/spring-aot/main/sources/</code> — look at the generated bean definition for the failing bean.</li>
+    <li>Run the tracing agent against the integration test suite to capture all library accesses.</li>
+    <li>Add <code>@RegisterReflectionForBinding</code> or a <code>RuntimeHintsRegistrar</code> <code>@Bean</code> for remaining gaps.</li>
+    <li>If the library is fundamentally incompatible — deploy two profiles: <code>native</code> for the main app, a separate JVM service for the incompatible piece.</li>
+  </ol>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <h2 id="pgo">13. Profile-guided optimisation (PGO)</h2>
   <p>
     By default, Native Image compiles without knowledge of which code paths are hot at runtime —
     all methods get the same treatment. <strong>PGO</strong> adds a profiling step: you run a
@@ -494,7 +752,7 @@ native-image --pgo=default.iprof -jar app.jar -o app
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════ -->
-  <h2 id="vs-aot">11. GraalVM Native Image vs JDK AOT Cache</h2>
+  <h2 id="vs-aot">14. GraalVM Native Image vs JDK AOT Cache</h2>
   <p>
     These are often confused because both use the term "AOT", but they solve completely different
     problems at different layers of the stack.
@@ -602,7 +860,7 @@ time ./app-native
 # real  0m0.082s     ← 60x faster than cold JVM, no JVM needed</code></pre>
 
   <!-- ═══════════════════════════════════════════════════════════════ -->
-  <h2 id="when-to-use">12. When to use which</h2>
+  <h2 id="when-to-use">15. When to use which</h2>
 
   <div class="table-wrap">
     <table>
@@ -654,7 +912,7 @@ time ./app-native
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════ -->
-  <h2 id="gotchas">13. Gotchas &amp; limitations</h2>
+  <h2 id="gotchas">16. Gotchas &amp; limitations</h2>
 
   <div class="table-wrap">
     <table>
@@ -705,7 +963,7 @@ time ./app-native
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════ -->
-  <h2 id="cheat-sheet">14. Cheat sheet</h2>
+  <h2 id="cheat-sheet">17. Cheat sheet</h2>
 
   <h3>Essential native-image flags</h3>
   <pre><code class="bash"># Basic
