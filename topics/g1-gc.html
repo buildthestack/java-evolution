@@ -41,8 +41,10 @@
   <div class="page-toc">
     <strong>On this page</strong>
     <a href="#what">1. What G1 is, and why it's the default</a>
+    <a href="#what">  1.1 The collection lifecycle at a glance</a>
     <a href="#timeline">2. Version timeline — every G1 JEP, verified</a>
     <a href="#regions">3. The region-based heap</a>
+    <a href="#regions">  3.4 Evacuation — how G1 reclaims space</a>
     <a href="#satb">4. SATB marking — the concurrent mark cycle explained</a>
     <a href="#remsets">5. Remembered sets and card tables</a>
     <a href="#ihop">6. IHOP and adaptive IHOP — when marking starts</a>
@@ -79,6 +81,53 @@
   <strong>mostly concurrent</strong> (marking runs alongside the application; only brief pauses bracket
   it), and <strong>pause-time aware</strong> (G1 actually tracks its own performance against the goal
   you've set and adjusts collection-set size accordingly).</p>
+
+  <h3>1.1 · The G1 collection lifecycle at a glance</h3>
+  <p>
+    G1 does not run one monolithic operation. It runs a continuous <strong>loop</strong> of three
+    phases, each with a different job. Understanding this loop is the key to understanding every
+    log line and every tuning flag:
+  </p>
+  <pre><code class="java">[ Heap fills ]
+      │
+      ▼
+┌─────────────────────────────────────────────────────────┐
+│  Phase 1 — Young GC  (STW, milliseconds)                │
+│  Eden full → evacuate Eden + Survivor regions           │
+│  → survivors promoted to Survivor or Old                │
+│  → Eden regions instantly freed (evacuation = compact)  │
+└───────────────────────┬─────────────────────────────────┘
+                        │ Old gen reaches IHOP threshold?
+                 No ◄───┤
+                        │ Yes
+                        ▼
+┌─────────────────────────────────────────────────────────┐
+│  Phase 2 — Concurrent Marking Cycle                     │
+│  Initial Mark (piggybacks Young GC) — STW, brief        │
+│  Concurrent Mark — runs alongside app, no pause         │
+│  Remark — STW, sub-millisecond                          │
+│  Cleanup — STW, sub-millisecond; frees 100%-garbage     │
+│  regions and builds Mixed GC candidate list             │
+└───────────────────────┬─────────────────────────────────┘
+                        │ Enough old regions to reclaim?
+                 No ◄───┤
+                        │ Yes
+                        ▼
+┌─────────────────────────────────────────────────────────┐
+│  Phase 3 — Mixed GC  (STW, up to G1MixedGCCountTarget  │
+│            = 8 passes by default)                       │
+│  Each pass: all young regions + top-ranked old regions  │
+│  → stops when &lt; G1HeapWastePercent reclaimable          │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+                        ▼
+                 Back to Phase 1 (Young GC)</code></pre>
+  <div class="note">
+    <strong>G1 replaced two collectors:</strong> it replaced <strong>CMS</strong> as the preferred
+    low-latency collector (CMS was removed in JDK 14, JEP 363), and it replaced
+    <strong>Parallel GC</strong> as the server-class default (JEP 248, JDK 9). These are different
+    roles — G1 is the successor to both.
+  </div>
 
   <!-- ============================================================ -->
   <h2 id="timeline">2 · Version Timeline — Every G1 JEP, Verified</h2>
@@ -189,6 +238,66 @@ GC(0) Humongous regions: 0-&gt;0      // no humongous this cycle</code></pre>
   during the Remark pause as likely profitable to collect. From these it filters out any region where the
   reclaimable space is less than <code>-XX:G1HeapWastePercent</code> percent of the current heap, since
   the evacuation work wouldn't be worth it.</p>
+
+  <h3>3.4 · Evacuation — how G1 actually reclaims space</h3>
+  <p>
+    G1 reclaims memory through <strong>evacuation</strong> (also called copying collection): it copies
+    every live object <em>out of</em> the collection-set regions into fresh regions, then instantly
+    declares the original regions empty. This is how compaction comes for free — no separate
+    compaction pass ever runs.
+  </p>
+  <table class="data">
+    <tr><th>Step</th><th>What happens</th></tr>
+    <tr>
+      <td><strong>1 · Build the Collection Set (CSet)</strong></td>
+      <td>
+        Before the pause, G1 decides which regions to empty this cycle.
+        <ul>
+          <li><strong>Young GC:</strong> 100% of Eden + Survivor regions.</li>
+          <li><strong>Mixed GC:</strong> all young regions + the top-ranked old regions from the garbage-first priority list (up to <code>G1MixedGCCountTarget</code> passes total — default 8).</li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td><strong>2 · Scan Remembered Sets</strong></td>
+      <td>
+        To find every live object inside the CSet, G1 must trace references that come
+        <em>from outside</em> the CSet (old → young pointers). It reads each CSet region's
+        Remembered Set — a compact index of 512-byte cards in external regions that have
+        inbound pointers — so it never needs to scan the whole heap.
+      </td>
+    </tr>
+    <tr>
+      <td><strong>3 · Parallel copy (evacuation proper)</strong></td>
+      <td>
+        All parallel GC workers (<code>-XX:ParallelGCThreads</code>, 12 on this machine) work
+        simultaneously:
+        <ol>
+          <li>Trace live objects from roots + RSets.</li>
+          <li>Copy each live object to a fresh Survivor or Old region (tightly packed, no gaps).</li>
+          <li>Write a forwarding pointer in the original location so any other reference to that
+              object can be updated.</li>
+          <li>Update all references pointing to moved objects to their new addresses.</li>
+        </ol>
+      </td>
+    </tr>
+    <tr>
+      <td><strong>4 · Instant reclaim + free compaction</strong></td>
+      <td>
+        Once all live objects are copied out, the original CSet regions contain <em>only dead
+        data</em>. G1 resets them atomically — they become Free regions available for the next
+        Eden allocation. Because objects were packed tightly into the destination regions during
+        the copy, <strong>heap fragmentation is eliminated as a natural by-product</strong>. No
+        separate compaction phase is ever needed, unlike CMS (which had to occasionally
+        full-compact, causing long pauses).
+      </td>
+    </tr>
+  </table>
+  <div class="tip">
+    <strong>Why evacuation failures hurt so much (§9):</strong> when there are no free destination
+    regions to copy into, G1 cannot complete step 3 and must fall back to leaving objects in place
+    — losing the compaction benefit and requiring extra fixup work inside the same pause.
+  </div>
 
   <!-- ============================================================ -->
   <h2 id="satb">4 · SATB Marking — the Concurrent Mark Cycle Explained</h2>
@@ -353,11 +462,31 @@ GC(0) Adaptive IHOP: threshold=362387865B (47.37%), internal target=765041049B,
     <tr><td>Wasted space</td><td><em>"Any leftover space in the last region of the sequence will be
     lost for allocation until the entire object is reclaimed."</em> A 2.1MB object in 4MB regions
     uses 2 regions (8MB allocated) with 5.9MB permanently wasted while the object is alive.</td></tr>
-    <tr><td>When reclaimed</td><td>Generally only at the end of marking (Cleanup pause) — unlike
-    young objects that are collected every cycle. Exception: primitive-array humongous objects
-    (<code>bool[]</code>, <code>int[]</code>, etc.) can be eagerly reclaimed during any GC pause if they
-    have few references to them — <code>-XX:+G1EagerReclaimHumongousObjects</code>, on by
-    default.</td></tr>
+    <tr><td>When reclaimed — 3 scenarios</td><td>
+      <ol>
+        <li>
+          <strong>Eager reclamation during Young GC</strong> — if the humongous object's
+          Remembered Set shows <em>no live inbound references</em> at the time of a Young GC,
+          G1 reclaims it immediately in that same pause without waiting for a marking cycle.
+          Controlled by <code>-XX:+G1EagerReclaimHumongousObjects</code>, on by default.
+          Feature and flag both introduced in <strong>JDK 8u60</strong>, as confirmed in the
+          JDK 8u60 release notes (the flag is listed as a new experimental JVM option there).
+        </li>
+        <li>
+          <strong>Concurrent Marking Cleanup</strong> — if a humongous object cannot be eagerly
+          reclaimed (it has live inbound references or eager reclaim is off), it must wait for the
+          next Concurrent Mark Cycle to complete. Once marking confirms the object is dead, the
+          Cleanup pause frees those regions.
+        </li>
+        <li>
+          <strong>Full GC — worst case</strong> — if many large humongous objects fragment the
+          heap so severely that G1 cannot find enough contiguous free regions for a new humongous
+          allocation, a Full GC is triggered to compact the entire heap. This is the scenario
+          humongous objects most often cause when they arrive in bursts (e.g. many short-lived
+          large byte arrays in a media-processing pipeline).
+        </li>
+      </ol>
+    </td></tr>
     <tr><td>Premature GC trigger</td><td>Per Oracle: <em>"Allocations of humongous objects may cause
     garbage collection pauses to occur prematurely. G1 checks the IHOP threshold at every humongous
     object allocation and may force an initial mark young collection immediately."</em></td></tr>
@@ -471,6 +600,20 @@ $ java -XX:+UseG1GC -Xmx6g -Xlog:gc* -cp . G1Demo     # every sub-phase</code></
     <tr><td><code>-Xmx</code></td><td>platform ergonomic</td><td>Maximum heap size. The most impactful
     setting for avoiding Full GC: the heap must be large enough to hold the live set plus headroom for
     allocation while a concurrent mark cycle runs.</td></tr>
+    <tr><td><code>-Xms</code></td><td>platform ergonomic</td><td>
+      <strong>Set equal to <code>-Xmx</code> for consistent pause times.</strong> Oracle's GC Tuning
+      Guide (JDK 21) verbatim: <em>"You can minimize heap resizing work by disabling it; set the options
+      <code>-Xms</code> and <code>-Xmx</code> to the same value. In addition, you can use
+      <code>-XX:+AlwaysPreTouch</code> to move the OS work to VM startup time. Both of these measures
+      can be particularly desirable in order to make pause-times more consistent."</em>
+      Heap resize events cause OS-level work that shows up as erratic pauses. Fix with:
+      <code>-Xms4g -Xmx4g -XX:+AlwaysPreTouch</code>.
+    </td></tr>
+    <tr><td><code>-XX:+AlwaysPreTouch</code></td><td>off</td><td>Touch all heap pages during JVM startup
+    so the OS allocates physical memory up front, not on first access during GC. Eliminates the
+    page-fault latency spikes that otherwise show up as irregular GC pauses on newly started JVMs.
+    Pair with <code>-Xms = -Xmx</code> for maximum pause consistency. Adds startup time proportional
+    to heap size (~1–3 s for a 4 GB heap) — acceptable for long-lived server processes.</td></tr>
     <tr><td><code>-XX:SoftMaxHeapSize</code></td><td>= <code>-Xmx</code></td><td>Soft ceiling G1 tries
     to stay under; heap can still grow to <code>-Xmx</code> under real pressure. Useful in containers
     where you want to leave headroom for native/off-heap allocations.</td></tr>
@@ -498,6 +641,11 @@ $ java -XX:+UseG1GC -Xmx6g -Xlog:gc* -cp . G1Demo     # every sub-phase</code></
     fills (causing Full GC), at the cost of more CPU competition with the application.</td></tr>
     <tr><td><code>-XX:G1ConcRefinementThreads</code></td><td>ergonomic (12 on this machine)</td><td>Max
     threads used to update remembered sets concurrently between GC pauses.</td></tr>
+    <tr><td><code>-XX:G1MixedGCCountTarget</code></td><td><code>8</code></td><td>Target number of Mixed
+    GC passes in a single Space-Reclamation phase. G1 spreads old-region reclamation across this many
+    Mixed collections (default 8) to keep each pause small. Increase to reduce per-pause work (more,
+    shorter pauses); decrease to finish reclamation faster (fewer, longer pauses). Confirmed default from
+    OpenJDK source (<code>g1_globals.hpp</code>).</td></tr>
     <tr><td><code>-XX:G1HeapWastePercent</code></td><td><code>5</code></td><td>Stop the Space-Reclamation
     phase when the remaining reclaimable memory (across all candidate regions) drops below this percentage
     of the heap — to avoid spending a full Mixed GC pause for diminishing returns.</td></tr>
