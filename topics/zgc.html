@@ -138,6 +138,116 @@ openjdk version "25.0.4" 2026-07-21 LTS</code></pre></div>
     live-set or heap size.</td></tr>
   </table>
 
+  <figure class="gc-diagram" style="margin:28px 0 8px;background:var(--bg-alt);border:1px solid var(--border);border-radius:10px;padding:20px 12px 12px;overflow:visible;">
+  <svg viewBox="0 0 760 218" xmlns="http://www.w3.org/2000/svg"
+       role="img" aria-label="ZGC collection cycle — 3 brief stop-the-world pauses with all major work concurrent">
+  <style>
+    .zc-stw  { fill:#fee2e2; stroke:#dc2626; stroke-width:1.5; }
+    .zc-cm   { fill:#dcfce7; stroke:#16a34a; stroke-width:1.5; }
+    .zc-ns   { fill:#e0f2fe; stroke:#0891b2; stroke-width:1.5; }
+    .zc-sr   { fill:#dbeafe; stroke:#2563eb; stroke-width:1.5; }
+    .zc-cr   { fill:#f3e8ff; stroke:#7c3aed; stroke-width:1.5; }
+    .zc-app  { fill:#f0fdf4; stroke:#16a34a; stroke-width:1; }
+    .zc-ap2  { fill:#fca5a5; }
+    .zc-ttl  { font:600 13px/1 sans-serif; fill:#334155; text-anchor:middle; }
+    .zc-in   { font:400 10px/1 sans-serif; fill:#1e293b; text-anchor:middle; dominant-baseline:central; }
+    .zc-sl   { font:700 10px/1 sans-serif; fill:#dc2626; text-anchor:middle; dominant-baseline:central; }
+    .zc-sub  { font:400 11px/1 sans-serif; fill:#64748b; text-anchor:middle; }
+    .zc-row  { font:400 11px/1 sans-serif; fill:#64748b; text-anchor:end; dominant-baseline:central; }
+    .zc-div  { stroke:#cbd5e1; stroke-width:1; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .zc-stw { fill:#450a0a; stroke:#f87171; }
+      :root:not([data-theme="light"]) .zc-cm  { fill:#14532d; stroke:#4ade80; }
+      :root:not([data-theme="light"]) .zc-ns  { fill:#0c4a6e; stroke:#38bdf8; }
+      :root:not([data-theme="light"]) .zc-sr  { fill:#1e3a8a; stroke:#60a5fa; }
+      :root:not([data-theme="light"]) .zc-cr  { fill:#3b0764; stroke:#c084fc; }
+      :root:not([data-theme="light"]) .zc-app { fill:#14532d; stroke:#4ade80; }
+      :root:not([data-theme="light"]) .zc-ap2 { fill:#7f1d1d; }
+      :root:not([data-theme="light"]) .zc-in  { fill:#e2e8f0; }
+      :root:not([data-theme="light"]) .zc-sl  { fill:#f87171; }
+      :root:not([data-theme="light"]) .zc-ttl { fill:#e2e8f0; }
+      :root:not([data-theme="light"]) .zc-sub { fill:#94a3b8; }
+      :root:not([data-theme="light"]) .zc-row { fill:#94a3b8; }
+      :root:not([data-theme="light"]) .zc-div { stroke:#334155; }
+    }
+    :root[data-theme="dark"] .zc-stw { fill:#450a0a; stroke:#f87171; }
+    :root[data-theme="dark"] .zc-cm  { fill:#14532d; stroke:#4ade80; }
+    :root[data-theme="dark"] .zc-ns  { fill:#0c4a6e; stroke:#38bdf8; }
+    :root[data-theme="dark"] .zc-sr  { fill:#1e3a8a; stroke:#60a5fa; }
+    :root[data-theme="dark"] .zc-cr  { fill:#3b0764; stroke:#c084fc; }
+    :root[data-theme="dark"] .zc-app { fill:#14532d; stroke:#4ade80; }
+    :root[data-theme="dark"] .zc-ap2 { fill:#7f1d1d; }
+    :root[data-theme="dark"] .zc-in  { fill:#e2e8f0; }
+    :root[data-theme="dark"] .zc-sl  { fill:#f87171; }
+    :root[data-theme="dark"] .zc-ttl { fill:#e2e8f0; }
+    :root[data-theme="dark"] .zc-sub { fill:#94a3b8; }
+    :root[data-theme="dark"] .zc-row { fill:#94a3b8; }
+    :root[data-theme="dark"] .zc-div { stroke:#334155; }
+  </style>
+
+  <text class="zc-ttl" x="380" y="22">ZGC Collection Cycle — 3 brief STW pauses, all other work concurrent</text>
+
+  <!-- Row labels -->
+  <text class="zc-row" x="62" y="60">GC phases</text>
+  <text class="zc-row" x="62" y="143">App threads</text>
+
+  <!-- ── PHASE BOXES y=38-82 h=44 ──
+    P1 Pause Mark Start  STW  x=67  w=24  cx=79
+    P2 Conc Mark              x=95  w=195 cx=192
+    P3 Pause Mark End    STW  x=294 w=24  cx=306
+    P4 Conc Non-Strong        x=322 w=58  cx=351
+    P5 Conc Sel Reloc         x=384 w=58  cx=413
+    P6 Pause Reloc Start STW  x=446 w=24  cx=458
+    P7 Conc Relocate          x=474 w=219 cx=583  end=693 -->
+
+  <rect class="zc-stw" x="67"  y="38" width="24"  height="44" rx="3"/>
+  <rect class="zc-cm"  x="95"  y="38" width="195" height="44" rx="3"/>
+  <text class="zc-in"  x="192" y="57">Concurrent</text>
+  <text class="zc-in"  x="192" y="71">Mark</text>
+  <rect class="zc-stw" x="294" y="38" width="24"  height="44" rx="3"/>
+  <rect class="zc-ns"  x="322" y="38" width="58"  height="44" rx="3"/>
+  <text class="zc-in"  x="351" y="52">Conc</text>
+  <text class="zc-in"  x="351" y="64">Process</text>
+  <text class="zc-in"  x="351" y="76">Non-Strong</text>
+  <rect class="zc-sr"  x="384" y="38" width="58"  height="44" rx="3"/>
+  <text class="zc-in"  x="413" y="52">Conc</text>
+  <text class="zc-in"  x="413" y="64">Select</text>
+  <text class="zc-in"  x="413" y="76">Reloc Set</text>
+  <rect class="zc-stw" x="446" y="38" width="24"  height="44" rx="3"/>
+  <rect class="zc-cr"  x="474" y="38" width="219" height="44" rx="3"/>
+  <text class="zc-in"  x="583" y="57">Concurrent</text>
+  <text class="zc-in"  x="583" y="71">Relocate</text>
+
+  <!-- STW labels below phase row (leader line y=82→96, text y=103/114) -->
+  <line stroke="#dc2626" stroke-width="1" stroke-dasharray="2,2" x1="79"  y1="82" x2="79"  y2="96"/>
+  <text class="zc-sl" x="79"  y="103">Pause</text>
+  <text class="zc-sl" x="79"  y="114">Mark Start</text>
+  <line stroke="#dc2626" stroke-width="1" stroke-dasharray="2,2" x1="306" y1="82" x2="306" y2="96"/>
+  <text class="zc-sl" x="306" y="103">Pause</text>
+  <text class="zc-sl" x="306" y="114">Mark End</text>
+  <line stroke="#dc2626" stroke-width="1" stroke-dasharray="2,2" x1="458" y1="82" x2="458" y2="96"/>
+  <text class="zc-sl" x="458" y="103">Pause</text>
+  <text class="zc-sl" x="458" y="114">Reloc Start</text>
+
+  <!-- ── APP THREADS BAR y=133-153 h=20 ── -->
+  <rect class="zc-app" x="67"  y="133" width="626" height="20" rx="4"/>
+  <rect class="zc-ap2" x="67"  y="133" width="24"  height="20" rx="3"/>
+  <rect class="zc-ap2" x="294" y="133" width="24"  height="20" rx="3"/>
+  <rect class="zc-ap2" x="446" y="133" width="24"  height="20" rx="3"/>
+
+  <!-- ── LEGEND ── -->
+  <line class="zc-div" x1="67" y1="168" x2="693" y2="168"/>
+  <rect class="zc-stw" x="67"  y="178" width="16" height="16" rx="3"/>
+  <text class="zc-sub" x="89" y="187" text-anchor="start">Stop-the-world (STW) — ~0.01ms each, independent of heap or live-set size</text>
+  <rect class="zc-cm"  x="420" y="178" width="16" height="16" rx="3"/>
+  <text class="zc-sub" x="442" y="187" text-anchor="start">Concurrent — alongside application threads</text>
+
+  </svg>
+  <figcaption style="text-align:center;font-size:.8rem;color:var(--text-soft);margin-top:4px;">
+    Not to scale — STW pauses are ~0.01ms; concurrent phases run for milliseconds to seconds
+  </figcaption>
+  </figure>
+
   <!-- ============================================================ -->
   <h2 id="original">4 · How the Original ZGC Worked (JDK 11–20) — Colored Pointers &amp; Multi-Mapping</h2>
   <p>This architecture shipped from JDK 11 through JDK 20, was deprecated once generational ZGC became
@@ -162,6 +272,105 @@ openjdk version "25.0.4" 2026-07-21 LTS</code></pre></div>
     marked live by the current GC cycle. ZGC alternates which of the two counts as "good" between
     cycles, so it never needs to bulk-clear a mark bitmap.</td></tr>
   </table>
+  <figure class="gc-diagram" style="margin:20px 0 8px;background:var(--bg-alt);border:1px solid var(--border);border-radius:10px;padding:18px 12px 14px;overflow:visible;">
+  <svg viewBox="0 0 760 188" xmlns="http://www.w3.org/2000/svg"
+       role="img" aria-label="ZGC colored pointer bit layout — original vs generational">
+  <style>
+    .zb-addr { fill:#dbeafe; stroke:#2563eb; stroke-width:1.5; }
+    .zb-meta { fill:#fef9c3; stroke:#ca8a04; stroke-width:1.5; }
+    .zb-unused { fill:#f1f5f9; stroke:#94a3b8; stroke-width:1.5; }
+    .zb-ttl  { font:600 13px/1 sans-serif; fill:#334155; text-anchor:middle; }
+    .zb-row  { font:600 11px/1 sans-serif; fill:#475569; text-anchor:end; dominant-baseline:central; }
+    .zb-in   { font:400 10px/1 sans-serif; fill:#1e293b; text-anchor:middle; dominant-baseline:central; }
+    .zb-ann  { font:400 10px/1 sans-serif; fill:#64748b; text-anchor:middle; }
+    .zb-note { font:400 11px/1 sans-serif; fill:#64748b; text-anchor:middle; }
+    .zb-arr  { stroke:#64748b; stroke-width:1.5; fill:none; marker-end:url(#zb-a); }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .zb-addr   { fill:#1e3a8a; stroke:#60a5fa; }
+      :root:not([data-theme="light"]) .zb-meta   { fill:#713f12; stroke:#fbbf24; }
+      :root:not([data-theme="light"]) .zb-unused { fill:#1e293b; stroke:#475569; }
+      :root:not([data-theme="light"]) .zb-ttl    { fill:#e2e8f0; }
+      :root:not([data-theme="light"]) .zb-row    { fill:#94a3b8; }
+      :root:not([data-theme="light"]) .zb-in     { fill:#e2e8f0; }
+      :root:not([data-theme="light"]) .zb-ann    { fill:#94a3b8; }
+      :root:not([data-theme="light"]) .zb-note   { fill:#94a3b8; }
+      :root:not([data-theme="light"]) .zb-arr    { stroke:#94a3b8; }
+    }
+    :root[data-theme="dark"] .zb-addr   { fill:#1e3a8a; stroke:#60a5fa; }
+    :root[data-theme="dark"] .zb-meta   { fill:#713f12; stroke:#fbbf24; }
+    :root[data-theme="dark"] .zb-unused { fill:#1e293b; stroke:#475569; }
+    :root[data-theme="dark"] .zb-ttl    { fill:#e2e8f0; }
+    :root[data-theme="dark"] .zb-row    { fill:#94a3b8; }
+    :root[data-theme="dark"] .zb-in     { fill:#e2e8f0; }
+    :root[data-theme="dark"] .zb-ann    { fill:#94a3b8; }
+    :root[data-theme="dark"] .zb-note   { fill:#94a3b8; }
+    :root[data-theme="dark"] .zb-arr    { stroke:#94a3b8; }
+  </style>
+  <defs>
+    <marker id="zb-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="context-stroke"/>
+    </marker>
+  </defs>
+
+  <text class="zb-ttl" x="380" y="20">64-bit Object Reference — Colored Pointer Layouts</text>
+
+  <!-- Ruler annotations (bit numbers) -->
+  <text class="zb-ann" x="118" y="36">bit 63</text>
+  <text class="zb-ann" x="270" y="36">bit 44</text>
+  <text class="zb-ann" x="510" y="36">bit 43</text>
+  <text class="zb-ann" x="698" y="36">bit 0</text>
+
+  <!-- ── ROW 1: Original ZGC (JDK 11–20)
+    bar x=118 to x=710, width=592px, 64 bits → 9.25px/bit
+    unused 16 bits: 148px  x=118→266
+    F (1 bit): 14px         x=266→280
+    R (1 bit): 14px         x=280→294
+    M1(1 bit): 14px         x=294→308
+    M0(1 bit): 14px         x=308→322
+    addr 44 bits: 407px     x=322→729  (fits to x=710, slight adjustment)
+    adjusted: addr 388px   x=322→710  -->
+  <text class="zb-row" x="114" y="72">Original</text>
+  <text class="zb-row" x="114" y="84">(JDK 11–20)</text>
+
+  <rect class="zb-unused" x="118" y="58" width="148" height="36" rx="3"/>
+  <text class="zb-in" x="192" y="76">unused (16 bits)</text>
+  <rect class="zb-meta" x="266" y="58" width="14" height="36" rx="2"/>
+  <text class="zb-in" x="273" y="76" font-size="9">F</text>
+  <rect class="zb-meta" x="280" y="58" width="14" height="36" rx="2"/>
+  <text class="zb-in" x="287" y="76" font-size="9">R</text>
+  <rect class="zb-meta" x="294" y="58" width="14" height="36" rx="2"/>
+  <text class="zb-in" x="301" y="76" font-size="9">M1</text>
+  <rect class="zb-meta" x="308" y="58" width="14" height="36" rx="2"/>
+  <text class="zb-in" x="315" y="76" font-size="9">M0</text>
+  <rect class="zb-addr" x="322" y="58" width="388" height="36" rx="3"/>
+  <text class="zb-in" x="516" y="76">object address (44 bits → 16 TB max)</text>
+
+  <!-- Brace annotation for 4 metadata bits -->
+  <text class="zb-ann" x="291" y="106">↑ F·R·M1·M0</text>
+  <text class="zb-ann" x="291" y="118">(4 used bits)</text>
+
+  <!-- ── ROW 2: Generational ZGC (JDK 21+)
+    Metadata moved to LOW-order bits (right side)
+    addr high bits: x=118→636, width=518px
+    metadata low bits: x=636→710, width=74px -->
+  <text class="zb-row" x="114" y="148">Generational</text>
+  <text class="zb-row" x="114" y="160">(JDK 21+)</text>
+
+  <rect class="zb-addr" x="118" y="134" width="518" height="36" rx="3"/>
+  <text class="zb-in" x="377" y="152">object address (high-order bits)</text>
+  <rect class="zb-meta" x="636" y="134" width="74" height="36" rx="3"/>
+  <text class="zb-in" x="673" y="152">metadata (low)</text>
+
+  <!-- Arrow showing metadata moved right (from left to right) -->
+  <path class="zb-arr" d="M291,122 Q291,128 380,130 Q500,132 636,140"/>
+  <text class="zb-ann" x="476" y="127">metadata moved to low bits (JEP 439)</text>
+
+  </svg>
+  <figcaption style="text-align:center;font-size:.8rem;color:var(--text-soft);margin-top:4px;">
+    F=Finalizable · R=Remapped · M1/M0=Marked — generational ZGC flips the layout (verified: JEP 439)
+  </figcaption>
+  </figure>
+
   <p>Layout, top bits to bottom:</p>
   <pre><code class="bash">bits 63 .. 44 (20 bits)   bits 43 .. 0 (44 bits)
 [ unused(16) F R M1 M0 ]  [        object address        ]
