@@ -82,6 +82,222 @@
   it), and <strong>pause-time aware</strong> (G1 actually tracks its own performance against the goal
   you've set and adjusts collection-set size accordingly).</p>
 
+  <figure class="gc-diagram" style="margin:28px 0 8px;background:var(--bg-alt);border:1px solid var(--border);border-radius:10px;padding:20px 12px 16px;overflow:visible;">
+  <svg viewBox="0 0 760 438" xmlns="http://www.w3.org/2000/svg"
+       role="img" aria-label="G1 GC heap layout and collection cycle — 40 heap regions with dynamic roles, plus a three-phase cycle diagram">
+  <style>
+    .gd-e  { fill:#bbf7d0; stroke:#16a34a; stroke-width:1.5; }
+    .gd-s  { fill:#fed7aa; stroke:#ea580c; stroke-width:1.5; }
+    .gd-o  { fill:#bfdbfe; stroke:#2563eb; stroke-width:1.5; }
+    .gd-h  { fill:#e9d5ff; stroke:#7c3aed; stroke-width:1.5; }
+    .gd-f  { fill:#f1f5f9; stroke:#94a3b8; stroke-width:1.5; }
+    .gd-lbl  { font:700 11px/1 sans-serif; fill:#1e293b; text-anchor:middle; dominant-baseline:central; }
+    .gd-hlbl { font:700 10px/1 sans-serif; fill:#4c1d95; text-anchor:middle; dominant-baseline:central; }
+    .gd-ttl  { font:600 13px/1 sans-serif; fill:#334155; text-anchor:middle; }
+    .gd-sub  { font:400 11px/1 sans-serif; fill:#64748b; text-anchor:middle; }
+    .gd-div  { stroke:#cbd5e1; stroke-width:1; }
+    .gd-arr  { stroke:#64748b; stroke-width:1.5; fill:none; }
+    .gd-trig { stroke:#f97316; stroke-width:1.5; fill:none; stroke-dasharray:4,3; }
+    .ph-y    { fill:#dcfce7; stroke:#16a34a; stroke-width:1.5; }
+    .ph-m    { fill:#fef9c3; stroke:#ca8a04; stroke-width:1.5; }
+    .ph-mx   { fill:#dbeafe; stroke:#2563eb; stroke-width:1.5; }
+    .ph-lbl  { font:700 12px/1 sans-serif; text-anchor:middle; dominant-baseline:central; }
+    .ph-sub  { font:400 10px/1 sans-serif; fill:#475569; text-anchor:middle; dominant-baseline:central; }
+    .ph-yl { fill:#15803d; }
+    .ph-ml { fill:#a16207; }
+    .ph-mxl{ fill:#1d4ed8; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .gd-e  { fill:#14532d; stroke:#4ade80; }
+      :root:not([data-theme="light"]) .gd-s  { fill:#7c2d12; stroke:#fb923c; }
+      :root:not([data-theme="light"]) .gd-o  { fill:#1e3a8a; stroke:#60a5fa; }
+      :root:not([data-theme="light"]) .gd-h  { fill:#3b0764; stroke:#c084fc; }
+      :root:not([data-theme="light"]) .gd-f  { fill:#1e293b; stroke:#475569; }
+      :root:not([data-theme="light"]) .gd-lbl  { fill:#e2e8f0; }
+      :root:not([data-theme="light"]) .gd-hlbl { fill:#e9d5ff; }
+      :root:not([data-theme="light"]) .gd-ttl  { fill:#e2e8f0; }
+      :root:not([data-theme="light"]) .gd-sub  { fill:#94a3b8; }
+      :root:not([data-theme="light"]) .gd-div  { stroke:#334155; }
+      :root:not([data-theme="light"]) .gd-arr  { stroke:#94a3b8; }
+      :root:not([data-theme="light"]) .gd-trig { stroke:#f97316; }
+      :root:not([data-theme="light"]) .ph-y  { fill:#14532d; stroke:#4ade80; }
+      :root:not([data-theme="light"]) .ph-m  { fill:#713f12; stroke:#fbbf24; }
+      :root:not([data-theme="light"]) .ph-mx { fill:#1e3a8a; stroke:#60a5fa; }
+      :root:not([data-theme="light"]) .ph-yl { fill:#4ade80; }
+      :root:not([data-theme="light"]) .ph-ml { fill:#fbbf24; }
+      :root:not([data-theme="light"]) .ph-mxl{ fill:#60a5fa; }
+      :root:not([data-theme="light"]) .ph-sub{ fill:#94a3b8; }
+    }
+    :root[data-theme="dark"] .gd-e  { fill:#14532d; stroke:#4ade80; }
+    :root[data-theme="dark"] .gd-s  { fill:#7c2d12; stroke:#fb923c; }
+    :root[data-theme="dark"] .gd-o  { fill:#1e3a8a; stroke:#60a5fa; }
+    :root[data-theme="dark"] .gd-h  { fill:#3b0764; stroke:#c084fc; }
+    :root[data-theme="dark"] .gd-f  { fill:#1e293b; stroke:#475569; }
+    :root[data-theme="dark"] .gd-lbl  { fill:#e2e8f0; }
+    :root[data-theme="dark"] .gd-hlbl { fill:#e9d5ff; }
+    :root[data-theme="dark"] .gd-ttl  { fill:#e2e8f0; }
+    :root[data-theme="dark"] .gd-sub  { fill:#94a3b8; }
+    :root[data-theme="dark"] .gd-div  { stroke:#334155; }
+    :root[data-theme="dark"] .gd-arr  { stroke:#94a3b8; }
+    :root[data-theme="dark"] .gd-trig { stroke:#f97316; }
+    :root[data-theme="dark"] .ph-y  { fill:#14532d; stroke:#4ade80; }
+    :root[data-theme="dark"] .ph-m  { fill:#713f12; stroke:#fbbf24; }
+    :root[data-theme="dark"] .ph-mx { fill:#1e3a8a; stroke:#60a5fa; }
+    :root[data-theme="dark"] .ph-yl { fill:#4ade80; }
+    :root[data-theme="dark"] .ph-ml { fill:#fbbf24; }
+    :root[data-theme="dark"] .ph-mxl{ fill:#60a5fa; }
+    :root[data-theme="dark"] .ph-sub{ fill:#94a3b8; }
+  </style>
+  <defs>
+    <marker id="g1-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="context-stroke"/>
+    </marker>
+  </defs>
+
+  <!-- ═══ HEAP LAYOUT ═══ -->
+  <text class="gd-ttl" x="380" y="22">G1 Heap — equally sized regions, roles assigned dynamically each cycle</text>
+
+  <!-- col x: 52 118 184 250 316 382 448 514 580 646 | row y: 40 86 132 178 -->
+
+  <!-- Row 0: E E S E E E F O E F -->
+  <rect class="gd-e" x="52"  y="40" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="83"  y="61">E</text>
+  <rect class="gd-e" x="118" y="40" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="149" y="61">E</text>
+  <rect class="gd-s" x="184" y="40" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="215" y="61">S</text>
+  <rect class="gd-e" x="250" y="40" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="281" y="61">E</text>
+  <rect class="gd-e" x="316" y="40" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="347" y="61">E</text>
+  <rect class="gd-e" x="382" y="40" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="413" y="61">E</text>
+  <rect class="gd-f" x="448" y="40" width="62" height="42" rx="4"/>
+  <rect class="gd-o" x="514" y="40" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="545" y="61">O</text>
+  <rect class="gd-e" x="580" y="40" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="611" y="61">E</text>
+  <rect class="gd-f" x="646" y="40" width="62" height="42" rx="4"/>
+
+  <!-- Row 1: O E E F S H(cols5-6, x=382 w=128) O E O -->
+  <rect class="gd-o" x="52"  y="86" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="83"  y="107">O</text>
+  <rect class="gd-e" x="118" y="86" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="149" y="107">E</text>
+  <rect class="gd-e" x="184" y="86" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="215" y="107">E</text>
+  <rect class="gd-f" x="250" y="86" width="62" height="42" rx="4"/>
+  <rect class="gd-s" x="316" y="86" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="347" y="107">S</text>
+  <rect class="gd-h" x="382" y="86" width="128" height="42" rx="4"/>
+  <text class="gd-hlbl" x="446" y="107">H (large object)</text>
+  <rect class="gd-o" x="514" y="86" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="545" y="107">O</text>
+  <rect class="gd-e" x="580" y="86" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="611" y="107">E</text>
+  <rect class="gd-o" x="646" y="86" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="677" y="107">O</text>
+
+  <!-- Row 2: O O F O O O O H(cols7-8, x=514 w=128) F -->
+  <rect class="gd-o" x="52"  y="132" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="83"  y="153">O</text>
+  <rect class="gd-o" x="118" y="132" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="149" y="153">O</text>
+  <rect class="gd-f" x="184" y="132" width="62" height="42" rx="4"/>
+  <rect class="gd-o" x="250" y="132" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="281" y="153">O</text>
+  <rect class="gd-o" x="316" y="132" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="347" y="153">O</text>
+  <rect class="gd-o" x="382" y="132" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="413" y="153">O</text>
+  <rect class="gd-o" x="448" y="132" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="479" y="153">O</text>
+  <rect class="gd-h" x="514" y="132" width="128" height="42" rx="4"/>
+  <text class="gd-hlbl" x="578" y="153">H  H</text>
+  <rect class="gd-f" x="646" y="132" width="62" height="42" rx="4"/>
+
+  <!-- Row 3: O O O O F O O O O O -->
+  <rect class="gd-o" x="52"  y="178" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="83"  y="199">O</text>
+  <rect class="gd-o" x="118" y="178" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="149" y="199">O</text>
+  <rect class="gd-o" x="184" y="178" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="215" y="199">O</text>
+  <rect class="gd-o" x="250" y="178" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="281" y="199">O</text>
+  <rect class="gd-f" x="316" y="178" width="62" height="42" rx="4"/>
+  <rect class="gd-o" x="382" y="178" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="413" y="199">O</text>
+  <rect class="gd-o" x="448" y="178" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="479" y="199">O</text>
+  <rect class="gd-o" x="514" y="178" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="545" y="199">O</text>
+  <rect class="gd-o" x="580" y="178" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="611" y="199">O</text>
+  <rect class="gd-o" x="646" y="178" width="62" height="42" rx="4"/>
+  <text class="gd-lbl" x="677" y="199">O</text>
+
+  <!-- ═══ LEGEND ═══ -->
+  <text class="gd-sub" x="380" y="234">region roles change every cycle — not fixed zones like old collectors</text>
+  <rect class="gd-e" x="134" y="246" width="16" height="16" rx="3"/>
+  <text class="gd-sub" x="156" y="255" text-anchor="start">Eden (E)</text>
+  <rect class="gd-s" x="232" y="246" width="16" height="16" rx="3"/>
+  <text class="gd-sub" x="254" y="255" text-anchor="start">Survivor (S)</text>
+  <rect class="gd-o" x="358" y="246" width="16" height="16" rx="3"/>
+  <text class="gd-sub" x="380" y="255" text-anchor="start">Old (O)</text>
+  <rect class="gd-h" x="454" y="246" width="16" height="16" rx="3"/>
+  <text class="gd-sub" x="476" y="255" text-anchor="start">Humongous (H)</text>
+  <rect class="gd-f" x="612" y="246" width="16" height="16" rx="3"/>
+  <text class="gd-sub" x="634" y="255" text-anchor="start">Free</text>
+
+  <!-- ═══ DIVIDER ═══ -->
+  <line class="gd-div" x1="52" y1="272" x2="708" y2="272"/>
+
+  <!-- ═══ COLLECTION CYCLE ═══ -->
+  <text class="gd-ttl" x="380" y="290">G1 Collection Cycle</text>
+
+  <!-- Phase boxes: x=76(Young) x=300(ConcMark) x=524(Mixed), y=305 w=160 h=80 -->
+
+  <!-- Phase 1: Young GC -->
+  <rect class="ph-y" x="76"  y="305" width="160" height="80" rx="8"/>
+  <text class="ph-lbl ph-yl" x="156" y="323">Young GC</text>
+  <text class="ph-sub" x="156" y="341">Eden fills → STW</text>
+  <text class="ph-sub" x="156" y="356">evacuate young regions</text>
+  <text class="ph-sub" x="156" y="371">~5–50 ms pause</text>
+
+  <!-- Arrow Y→ConcMark: dashed orange = IHOP trigger -->
+  <line class="gd-trig" x1="237" y1="345" x2="298" y2="345" marker-end="url(#g1-arr)"/>
+  <text x="267" y="335" text-anchor="middle" font-size="9" fill="#f97316">old gen</text>
+  <text x="267" y="358" text-anchor="middle" font-size="9" fill="#f97316">≥ IHOP%</text>
+
+  <!-- Phase 2: Concurrent Marking -->
+  <rect class="ph-m" x="300" y="305" width="160" height="80" rx="8"/>
+  <text class="ph-lbl ph-ml" x="380" y="323">Concurrent Mark</text>
+  <text class="ph-sub" x="380" y="341">Init Mark → Concurrent</text>
+  <text class="ph-sub" x="380" y="356">Remark → Cleanup</text>
+  <text class="ph-sub" x="380" y="371">mostly non-STW</text>
+
+  <!-- Arrow ConcMark→Mixed -->
+  <line class="gd-arr" x1="461" y1="345" x2="522" y2="345" marker-end="url(#g1-arr)"/>
+  <text x="492" y="335" text-anchor="middle" font-size="9" class="gd-sub">old region</text>
+  <text x="492" y="358" text-anchor="middle" font-size="9" class="gd-sub">candidates</text>
+
+  <!-- Phase 3: Mixed GC -->
+  <rect class="ph-mx" x="524" y="305" width="160" height="80" rx="8"/>
+  <text class="ph-lbl ph-mxl" x="604" y="323">Mixed GC</text>
+  <text class="ph-sub" x="604" y="341">all young + top-ranked</text>
+  <text class="ph-sub" x="604" y="356">old regions (CSet)</text>
+  <text class="ph-sub" x="604" y="371">up to 8 passes</text>
+
+  <!-- Return arc: Mixed → Young (below boxes) -->
+  <path class="gd-arr" d="M604,385 C604,418 156,418 156,385" marker-end="url(#g1-arr)"/>
+  <text class="gd-sub" x="380" y="414">space clean — loop repeats</text>
+
+  </svg>
+  <figcaption style="text-align:center;font-size:.8rem;color:var(--text-soft);margin-top:4px;">
+    40 sample regions shown — real heaps have thousands; dashed orange arrow = concurrent marking trigger (IHOP threshold)
+  </figcaption>
+  </figure>
+
   <h3>1.1 · The G1 collection lifecycle at a glance</h3>
   <p>
     G1 does not run one monolithic operation. It runs a continuous <strong>loop</strong> of three
